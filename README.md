@@ -6,7 +6,5 @@ Used in conjunction with the following plugins
 > VehicleLicenceTransmitter\
 > VehicleLicenceUI\
 > VehicleSpawner
-## VehicleLicence[➡️](https://github.com/Snaplatack/Free-Plugins/blob/main/VehicleLicence.cs)
-***This is a public fork from the popular plugin here: [VehicleLicence from Umod](https://umod.org/plugins/vehicle-license)***
 ## VehicleLicenceAddons[➡️](https://github.com/Snaplatack/Free-Plugins/blob/main/VehicleLicenceAddons.cs)
 ## VehicleLicenceTransmitter[➡️](https://github.com/Snaplatack/Free-Plugins/blob/main/VehicleLicenceTransmitter.cs)
