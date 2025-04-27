@@ -69,23 +69,22 @@ namespace Oxide.Plugins
 
             string argType = args[0].ToLower();
 
-            if (args.Length == 1 && argType == "reload")
+            switch (argType)
             {
-                ReloadPlugins();
-                return;
-            }
-
-            if (args.Length == 1 && argType == "reset")
-            {
-                if (UpdateData()) Message(player, "Successfully reset all data!");
-                else Message(player, "Failed to reset all data!");
-                return;
-            }
-
-            if (args.Length < 3 || argType != "set")
-            {
-                Message(player, errorMsg);
-                return;
+                case ("reload"):
+                    ReloadPlugins();
+                    return;
+                case ("reset"):
+                    if (UpdateData(true)) Message(player, "Successfully reset all data!");
+                    else Message(player, "Failed to reset all data!");
+                    return;
+                default:
+                    if (args.Length < 3)
+                    {
+                        Message(player, errorMsg);
+                        return;
+                    }
+                    break;
             }
 
             string dataTypePassed = args[1].ToLower();
@@ -130,7 +129,7 @@ namespace Oxide.Plugins
         #endregion
 
         #region Methods
-        private bool UpdateData()
+        private bool UpdateData(bool skipLoad = false)
         {
             try
             {
@@ -142,6 +141,8 @@ namespace Oxide.Plugins
                 if (karuzaVehicleParams.Count == 0) Puts($"Loaded '?' for all custom vehicle icons because KaruzaVehicleItemManager is missing!");
 
                 if (!config.settings.resetData) LoadData();
+
+                if (skipLoad) VehicleLicenceNames.vehicles.Clear();
 
                 foreach (var vehicleType in VehicleLicence.Instance.allVehicleSettings)
                 {
