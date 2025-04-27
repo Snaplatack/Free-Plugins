@@ -161,7 +161,6 @@ namespace Oxide.Plugins
                             }
                                 
                             VLParams.PrefabName = CleanVehicleName(karuzaVehicleParams.Find(x => CleanVehicleName(x.VLName) == CleanVehicleName(vehicleType.Key)).VLName);
-
                             VLParams.SkinID = karuzaVehicleParams.Find(x => CleanVehicleName(x.VLName) == CleanVehicleName(vehicleType.Key)).SkinID;
                         }
                         else
