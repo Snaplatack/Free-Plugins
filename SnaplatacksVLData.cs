@@ -25,7 +25,7 @@ namespace Oxide.Plugins
         public SnaplatacksVLData Instance;
         private Timer shutdownTimer;
         private const string cmd = "snapvldata";
-        private const string errorMsg = "SYNTAX ERROR\n/snapvldata < reset >\n/snapvldata < set > < vehicleName > < displayname | skin >";
+        private const string errorMsg = "SYNTAX ERROR\n/snapvldata <reset>\n/snapvldata <set> <vehicleName> <displayname | skin>";
 
         #region Data Setup
         private void Init()
@@ -60,6 +60,7 @@ namespace Oxide.Plugins
         #region Commands
         private void UpdateDataVariable(IPlayer player, string cmd, string[] args)
         {
+            // Command Format: /snapvldata <reset> | /snapvldata <set> <vehicleName> <displayname | skin>
             if (player == null && !player.IsServer || !player.IsAdmin) return;
 
             if (args.Length < 1)
@@ -73,6 +74,7 @@ namespace Oxide.Plugins
             if (args.Length == 1 && argType == "reset")
             {
                 if (UpdateData()) Message(player, "Successfully reset all data!");
+                else Message(player, "Failed to reset all data!");
                 return;
             }
 
@@ -91,6 +93,12 @@ namespace Oxide.Plugins
             ulong.TryParse(newName, out var newID);
 
             VehicleLicenceVehicles DataEntry = VehicleLicenceNames.vehicles.Find(x => x.VLName.ToLower() == vehicleName);
+
+            if (DataEntry == null)
+            {
+                Message(player, errorMsg);
+                return;
+            }
 
             switch (dataTypePassed)
             {
