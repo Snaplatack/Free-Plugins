@@ -17,12 +17,13 @@ namespace Oxide.Plugins
 {
     [Info("Snaplatack's Vehicle Licence Data", "Snaplatack", "1.0.0")]
     [Description("Data to support all my Vehicle Licence plugins")]
-    partial class SnaplatacksVLData : RustPlugin
+    class SnaplatacksVLData : RustPlugin
     {
         [PluginReference]
-        private readonly Plugin VehicleLicenceUI, VehicleLicenceAddons, VehicleLicenceTransmitter, VehicleSpawnerUI;
+        private readonly Plugin VehicleLicenceUI, /*VehicleLicenceAddons,*/ VehicleLicenceTransmitter, VehicleSpawnerUI;
 
         public SnaplatacksVLData Instance;
+        private Timer shutdownTimer;
         private const string cmd = "snapvldata";
         private const string errorMsg = "SYNTAX ERROR\n/snapvldata < reset >\n/snapvldata < set > < vehicleName > < displayname | skin >";
 
@@ -40,17 +41,19 @@ namespace Oxide.Plugins
 
         private void Loaded()
         {
-            //if (VehicleLicenceUI) Interface.Oxide.ReloadPlugin(VehicleLicenceUI.Name);
-            //if (VehicleLicenceAddons) Interface.Oxide.ReloadPlugin(VehicleLicenceAddons.Name);
-            //if (VehicleLicenceTransmitter) Interface.Oxide.ReloadPlugin(VehicleLicenceTransmitter.Name);
-            //if (VehicleSpawnerUI) Interface.Oxide.ReloadPlugin(VehicleSpawnerUI.Name);
+            if (config.settings.autoReload) ReloadPlugins();
 
             if (!config.settings.autoUnload) return;
             
-            timer.Once(5f,() =>
+            shutdownTimer = timer.Once(10f,() =>
             {
                 Interface.Oxide.UnloadPlugin(Name);
             });
+        }
+
+        private void Unload()
+        {
+            if (shutdownTimer != null) shutdownTimer.Destroy();
         }
         #endregion
 
@@ -183,6 +186,14 @@ namespace Oxide.Plugins
                 return false;
             }
         }
+
+        private void ReloadPlugins()
+        {
+            if (VehicleLicenceUI) Interface.Oxide.ReloadPlugin(VehicleLicenceUI.Name);
+            //if (VehicleLicenceAddons) Interface.Oxide.ReloadPlugin(VehicleLicenceAddons.Name);
+            if (VehicleLicenceTransmitter) Interface.Oxide.ReloadPlugin(VehicleLicenceTransmitter.Name);
+            if (VehicleSpawnerUI) Interface.Oxide.ReloadPlugin(VehicleSpawnerUI.Name);
+        }
         #endregion
 
         #region Method Helpers
@@ -237,6 +248,7 @@ namespace Oxide.Plugins
             public PluginSettings settings = new PluginSettings
             {
                 autoUnload = true,
+                autoReload = false,
                 resetData = false
             };
  
@@ -369,6 +381,9 @@ namespace Oxide.Plugins
         {
             [JsonProperty(PropertyName = "Auto unload plugin after updating data?")]
             public bool autoUnload;
+
+            [JsonProperty(PropertyName = "Auto reload associated plugins after updating data?")]
+            public bool autoReload;
 
             [JsonProperty(PropertyName = "Reset data file on every reload? [true = reset on load]")]
             public bool resetData;
