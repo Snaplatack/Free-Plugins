@@ -34,8 +34,6 @@ namespace Oxide.Plugins
 
             AddCovalenceCommand(cmd, nameof(UpdateDataVariable));
 
-            LoadData();
-
             UpdateData();
         }
 
@@ -60,7 +58,7 @@ namespace Oxide.Plugins
         #region Commands
         private void UpdateDataVariable(IPlayer player, string cmd, string[] args)
         {
-            // Command Format: /snapvldata <reset> | /snapvldata <set> <vehicleName> <displayname | skin>
+            // Command Format: /snaplatackvvldata <reload> | /snapvldata <reset> | /snapvldata <set> <vehicleName> <displayname | skin>
             if (player == null && !player.IsServer || !player.IsAdmin) return;
 
             if (args.Length < 1)
@@ -70,6 +68,12 @@ namespace Oxide.Plugins
             }
 
             string argType = args[0].ToLower();
+
+            if (args.Length == 1 && argType == "reload")
+            {
+                ReloadPlugins();
+                return;
+            }
 
             if (args.Length == 1 && argType == "reset")
             {
@@ -136,6 +140,8 @@ namespace Oxide.Plugins
                 var karuzaVehicleParams = karuzaVehicleConfig.VehicleItems.Count != 0 ? karuzaVehicleConfig.VehicleItems : new();
 
                 if (karuzaVehicleParams.Count == 0) Puts($"Loaded '?' for all custom vehicle icons because KaruzaVehicleItemManager is missing!");
+
+                if (!config.settings.resetData) LoadData();
 
                 foreach (var vehicleType in VehicleLicence.Instance.allVehicleSettings)
                 {
@@ -255,7 +261,7 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "General Settings")]
             public PluginSettings settings = new PluginSettings
             {
-                autoUnload = true,
+                autoUnload = false,
                 autoReload = false,
                 resetData = false
             };
