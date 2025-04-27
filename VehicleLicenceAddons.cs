@@ -11,7 +11,7 @@ using System.Linq;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence Addons", "Snaplatack", "1.0.31")]
+    [Info("Vehicle Licence Addons", "Snaplatack", "1.0.4")]
     [Description("Additional options for the Vehicle Licence plugin")]
     public class VehicleLicenceAddons : CovalencePlugin
     {
@@ -61,7 +61,7 @@ namespace Oxide.Plugins
         #region Owned Licenses & Vehicles
         private void CurrentOwnedLicensesCmd(IPlayer iPlayer, string command, string[] args)
         {
-            // cmdName <playerName>
+            // Command Format: cmdName <playerName>
             ulong playerID = ulong.Parse(iPlayer.Id);
             IPlayer iPlayerFound = iPlayer;
             ulong iPlayerFoundID = 0;
@@ -112,6 +112,7 @@ namespace Oxide.Plugins
 
         private void CurrentlySpawnedVehiclesCmd(IPlayer iPlayer, string command, string[] args)
         {
+            // Command Format: cmdName <playerName>
             ulong playerID = ulong.Parse(iPlayer.Id);
             IPlayer iPlayerFound = iPlayer;
             ulong iPlayerFoundID = 0;
@@ -309,7 +310,7 @@ namespace Oxide.Plugins
             }
 
             Data.trades.tradeRequests.Add(tradeRequest);
-            SaveData(); //Used to Debug
+            //SaveData(); //Used to Debug
 
             if (amountFound != 0)
             {
@@ -418,7 +419,7 @@ namespace Oxide.Plugins
                 Data.trades.tradeRequests.Remove(currentRequest);
             }
 
-            SaveData(); //Used to Debug
+            //SaveData(); //Used to Debug
 
             if (sellAmountSR != 0)
             {
@@ -491,7 +492,7 @@ namespace Oxide.Plugins
                 Data.trades.tradeRequests.Remove(currentRequest);
             }
 
-            SaveData(); //Used to Debug
+            //SaveData(); //Used to Debug
 
             if (sellAmountSR != 0)
             {
@@ -565,7 +566,7 @@ namespace Oxide.Plugins
                 Data.trades.tradeRequests.Remove(currentRequest);
             }
 
-            SaveData(); //Used to Debug
+            //SaveData(); //Used to Debug
 
             if (sellAmountSR != 0)
             {
@@ -692,7 +693,7 @@ namespace Oxide.Plugins
 
         private void UpdateConfig()
         {
-            //current version = 1.0.31
+            //current version = 1.0.4
             if (config.Version >= Version) return;
             if (config.Version < new VersionNumber(1, 0, 3))
             {
