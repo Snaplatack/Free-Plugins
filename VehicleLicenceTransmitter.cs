@@ -58,6 +58,8 @@ namespace Oxide.Plugins
                 Subscribe(nameof(CanBuild));
             }
 
+            if (config.Settings.syncFrequencyWhenMount) Subscribe(nameof(OnEntityMounted));
+
             permission.RegisterPermission(config.Perms.UseTransmitterPerm, this);
             permission.RegisterPermission(config.Perms.Admin, this);
 
@@ -120,6 +122,7 @@ namespace Oxide.Plugins
         	
         private void Init()
         {
+            Unsubscribe(nameof(OnEntityMounted));
             Unsubscribe(nameof(OnEntityBuilt));
             Unsubscribe(nameof(CanBuild));
         }
@@ -161,7 +164,7 @@ namespace Oxide.Plugins
                         ? VehicleLicence.Instance?.GetVehicleLicenses(player.userID.Get())
                         : VehicleLicence.Instance?.GetVehicleLicenses(player.userID.Get()).OrderBy(x => x).ToList();
 
-            if (!config.Settings.syncFrequencyWhenMount) return;
+            
 
             List<Item> playerInv = GetPlayerInv(player);
 
