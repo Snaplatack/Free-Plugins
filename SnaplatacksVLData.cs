@@ -25,6 +25,7 @@ namespace Oxide.Plugins
         public SnaplatacksVLData Instance;
         private Timer shutdownTimer;
         private const string cmd = "snapvldata";
+        private const string perm = "snaplatacksvldata.use";
         private const string errorMsg = "SYNTAX ERROR\n/snapvldata <reset>\n/snapvldata <set> <vehicleName> <displayname | skin>";
 
         #region Data Setup
@@ -32,13 +33,15 @@ namespace Oxide.Plugins
         {
             Instance = this;
 
-            AddCovalenceCommand(cmd, nameof(UpdateDataVariable));
+            AddCovalenceCommand(cmd, nameof(UpdateDataVariable), perm);
 
-            UpdateData();
+            UpdateVehicleData();
+
+            UpdateVLSettings();
         }
 
         private void Loaded()
-        {
+        { 
             if (config.settings.autoReload) ReloadPlugins();
 
             if (!config.settings.autoUnload) return;
@@ -59,7 +62,7 @@ namespace Oxide.Plugins
         private void UpdateDataVariable(IPlayer player, string cmd, string[] args)
         {
             // Command Format: /snaplatackvvldata <reload> | /snapvldata <reset> | /snapvldata <set> <vehicleName> <displayname | skin>
-            if (player == null && !player.IsServer || !player.IsAdmin) return;
+            if (player == null && !player.IsServer) return;
 
             if (args.Length < 1)
             {
@@ -75,8 +78,8 @@ namespace Oxide.Plugins
                     ReloadPlugins();
                     return;
                 case ("reset"):
-                    if (UpdateData(true)) Message(player, "Successfully reset all data!");
-                    else Message(player, "Failed to reset all data!");
+                    UpdateVehicleData(true);
+                    Message(player, "Successfully reset all data!");
                     return;
                 default:
                     if (args.Length < 3)
@@ -93,7 +96,7 @@ namespace Oxide.Plugins
 
             string newName = args[3];
 
-            ulong.TryParse(newName, out var newID);
+            ulong.TryParse(newName, out ulong newID);
 
             VehicleLicenceVehicles DataEntry = VehicleLicenceNames.vehicles.Find(x => x.VLName.ToLower() == vehicleName);
 
@@ -129,76 +132,102 @@ namespace Oxide.Plugins
         #endregion
 
         #region Methods
-        private bool UpdateData(bool skipLoad = false)
+        private void UpdateVLSettings()
         {
-            try
+            var VLData = VehicleLicence.Instance.configData.chat;
+
+            VLChatSettings chatSettings = new();
+
+            // Commands
+            chatSettings.spawnCmd = VLData.spawnCommand;
+            chatSettings.recallCmd = VLData.recallCommand;
+            chatSettings.killCmd = VLData.killCommand;
+
+            // Chat Settings
+            chatSettings.prefix = VLData.prefix;
+            chatSettings.steamIDIcon = VLData.steamIDIcon;
+
+            VLChatParams.settings = chatSettings;
+
+            SaveVLChatSettings();
+        }
+
+        private void UpdateVehicleData(bool skipLoad = false)
+        {
+            int i = 2;
+            int position = 0;
+            string[] carBS = new string[] {"SmallCar", "MediumCar", "LargeCar"};
+            var karuzaVehicleConfig = Config.ReadObject<KaruzaConfiguration>($"{Interface.Oxide.ConfigDirectory}/KaruzaVehicleItemManager.json");
+            var karuzaVehicleParams = karuzaVehicleConfig.VehicleItems.Count != 0 ? karuzaVehicleConfig.VehicleItems : new();
+
+            if (karuzaVehicleParams.Count == 0) Puts($"Loaded '?' for all custom vehicle icons because KaruzaVehicleItemManager is missing!");
+
+            if (!config.settings.resetData) LoadData();
+
+            if (skipLoad) VehicleLicenceNames.vehicles.Clear();
+
+            foreach (var vehicleType in VehicleLicence.Instance.allVehicleSettings)
             {
-                int i = 2;
-                string[] carBS = new string[] {"SmallCar", "MediumCar", "LargeCar"};
-                var karuzaVehicleConfig = Config.ReadObject<KaruzaConfiguration>($"{Interface.Oxide.ConfigDirectory}/KaruzaVehicleItemManager.json");
-                var karuzaVehicleParams = karuzaVehicleConfig.VehicleItems.Count != 0 ? karuzaVehicleConfig.VehicleItems : new();
+                VehicleLicenceVehicles VLParams = new();
 
-                if (karuzaVehicleParams.Count == 0) Puts($"Loaded '?' for all custom vehicle icons because KaruzaVehicleItemManager is missing!");
+                if (VehicleLicenceNames.vehicles.Exists(x => x.VLName == vehicleType.Key) && !config.settings.resetData) continue;
 
-                if (!config.settings.resetData) LoadData();
-
-                if (skipLoad) VehicleLicenceNames.vehicles.Clear();
-
-                foreach (var vehicleType in VehicleLicence.Instance.allVehicleSettings)
+                if (vehicleType.Value.CustomVehicle)
                 {
-                    VehicleLicenceVehicles VLParams = new();
-
-                    if (VehicleLicenceNames.vehicles.Exists(x => x.VLName == vehicleType.Key) && !config.settings.resetData) continue;
-
-                    if (vehicleType.Value.CustomVehicle)
+                    if ((karuzaVehicleParams.Count != 0) && !removedVehicles.Exists(x => x.vehicleName == vehicleType.Key))
                     {
-                        if ((karuzaVehicleParams.Count != 0) && !removedVehicles.Exists(x => x.vehicleName == vehicleType.Key))
+                        if (!karuzaVehicleParams.Exists(x => CleanVehicleName(x.VLName) == CleanVehicleName(vehicleType.Key)))
                         {
-                            if (!karuzaVehicleParams.Exists(x => CleanVehicleName(x.VLName) == CleanVehicleName(vehicleType.Key)))
-                            {
-                                Puts($"{vehicleType.Key} was not found in KaruzaVehicleItemManager. Skipping...");
-                                continue;
-                            }
-                                
-                            VLParams.PrefabName = CleanVehicleName(karuzaVehicleParams.Find(x => CleanVehicleName(x.VLName) == CleanVehicleName(vehicleType.Key)).VLName);
-                            VLParams.SkinID = karuzaVehicleParams.Find(x => CleanVehicleName(x.VLName) == CleanVehicleName(vehicleType.Key)).SkinID;
+                            Puts($"{vehicleType.Key} was not found in KaruzaVehicleItemManager. Skipping...");
+                            continue;
                         }
-                        else
-                        {
-                            VLParams.PrefabName = vehicleType.Key.ToLower();
-                            VLParams.SkinID = removedVehicles.Find(x => x.vehicleName == vehicleType.Key).vehicleID; // this ID is a '?' png
-                        }
+                            
+                        VLParams.PrefabName = CleanVehicleName(karuzaVehicleParams.Find(x => CleanVehicleName(x.VLName) == CleanVehicleName(vehicleType.Key)).VLName);
+                        VLParams.SkinID = karuzaVehicleParams.Find(x => CleanVehicleName(x.VLName) == CleanVehicleName(vehicleType.Key)).SkinID;
                     }
                     else
                     {
-                        if (carBS.Contains(vehicleType.Key))
-                        {
-                            VLParams.FuckOffFacepunch = $"{i}modulecarspawned";
-                            i++;
-                        }
-
-                        VLParams.SkinID = vehicleItems.Find(value => value.VLName == vehicleType.Key).SkinID;
-                        VLParams.PrefabName = vehicleItems.Find(value => value.VLName == vehicleType.Key).PrefabName;
+                        VLParams.PrefabName = vehicleType.Key.ToLower();
+                        VLParams.SkinID = removedVehicles.Find(x => x.vehicleName == vehicleType.Key).vehicleID;
+                    }
+                }
+                else
+                {
+                    if (carBS.Contains(vehicleType.Key))
+                    {
+                        VLParams.FuckOffFacepunch = $"{i}modulecarspawned";
+                        i++;
                     }
 
-                    VLParams.VLDisplayName = vehicleType.Value.DisplayName;
-                    VLParams.VLName = vehicleType.Key;
-
-                    VLParams.IsWaterVehicle = vehicleType.Value.IsWaterVehicle;
-                    VLParams.IsPurchasable = vehicleType.Value.Purchasable;
-                    VLParams.IsCustomVehicle = vehicleType.Value.CustomVehicle;
-
-                    VehicleLicenceNames.vehicles.Add(VLParams);
+                    VLParams.SkinID = vehicleItems.Find(value => value.VLName == vehicleType.Key).SkinID;
+                    VLParams.PrefabName = vehicleItems.Find(value => value.VLName == vehicleType.Key).PrefabName;
                 }
-            
-                SaveVLVehicles();
-                return true;
+
+                VLParams.VLDisplayName = vehicleType.Value.DisplayName;
+                VLParams.VLName = vehicleType.Key;
+
+                VLParams.IsWaterVehicle = vehicleType.Value.IsWaterVehicle;
+                VLParams.IsPurchasable = vehicleType.Value.Purchasable;
+                VLParams.IsCustomVehicle = vehicleType.Value.CustomVehicle;
+                
+                VLParams.PurchasePrices = new();
+
+                foreach (var price in vehicleType.Value.PurchasePrices)
+                {
+                    if (vehicleType.Value.PurchasePrices.Count == 0) break;
+
+                    PriceInfo prices = new();
+
+                    prices.amount = price.Value.amount;
+                    prices.displayName = price.Value.displayName;
+
+                    VLParams.PurchasePrices.Add(price.Key, prices);
+                }
+
+                VehicleLicenceNames.vehicles.Add(VLParams);
             }
-            catch (Exception e)
-            {
-                Puts(e.Message);
-                return false;
-            }
+        
+            SaveVLVehicles();
         }
 
         private void ReloadPlugins()
@@ -229,10 +258,16 @@ namespace Oxide.Plugins
 
         #region Data File
         public VehicleLicenceData VehicleLicenceNames = new VehicleLicenceData();
+        public VLChatData VLChatParams = new VLChatData();
 
         public class VehicleLicenceData
         {
             public List<VehicleLicenceVehicles> vehicles = new();
+        }
+
+        public class VLChatData
+        {
+            public VLChatSettings settings = new();
         }
 
         private void LoadData()
@@ -240,17 +275,24 @@ namespace Oxide.Plugins
             try
             {
                 VehicleLicenceNames = Interface.Oxide.DataFileSystem.ReadObject<VehicleLicenceData>($"{Name}/VehicleLicenceNames");
+                VLChatParams = Interface.Oxide.DataFileSystem.ReadObject<VLChatData>($"{Name}/VehicleLicenceChatSettings");
             }
 
             catch (Exception)
             {
                 VehicleLicenceNames = new VehicleLicenceData();
+                VLChatParams = new VLChatData();
             }
         }
 
         private void SaveVLVehicles()
         {
             Interface.Oxide.DataFileSystem.WriteObject($"{Name}/VehicleLicenceNames", VehicleLicenceNames);
+        }
+
+        private void SaveVLChatSettings()
+        {
+            Interface.Oxide.DataFileSystem.WriteObject($"{Name}/VehicleLicenceChatSettings", VLChatParams);
         }
         #endregion
 
@@ -423,6 +465,22 @@ namespace Oxide.Plugins
             public List<CustomVehicleItems> VehicleItems = new List<CustomVehicleItems>();
         }
 
+        public class VLChatSettings
+        {   
+            public string spawnCmd { get; set; }
+            public string recallCmd { get; set; }
+            public string killCmd { get; set; }
+
+            public string prefix { get; set; }
+            public ulong steamIDIcon { get; set; }
+        }
+
+        public class PriceInfo
+        {
+            public int amount;
+            public string displayName;
+        }
+
         public class VehicleLicenceVehicles
         {
             public string VLName { get; set; }
@@ -433,6 +491,7 @@ namespace Oxide.Plugins
             public string PrefabName { get; set; }
             public string FuckOffFacepunch { get; set; } // Fuck Facepunch
             public ulong SkinID { get; set; }
+            public Dictionary<string, PriceInfo> PurchasePrices { get; set; }
         }
 
         public class RemovedVehicles

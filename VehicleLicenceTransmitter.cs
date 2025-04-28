@@ -60,6 +60,8 @@ namespace Oxide.Plugins
 
             if (config.Settings.syncFrequencyWhenMount) Subscribe(nameof(OnEntityMounted));
 
+            if (config.Settings.updateTranmitterOnSpawned) Subscribe(nameof(OnItemAddedToContainer));
+
             permission.RegisterPermission(config.Perms.UseTransmitterPerm, this);
             permission.RegisterPermission(config.Perms.Admin, this);
 
@@ -125,6 +127,28 @@ namespace Oxide.Plugins
             Unsubscribe(nameof(OnEntityMounted));
             Unsubscribe(nameof(OnEntityBuilt));
             Unsubscribe(nameof(CanBuild));
+            Unsubscribe(nameof(OnItemAddedToContainer));
+        }
+
+        private void OnItemAddedToContainer(ItemContainer instance, Item item)
+        {
+            if (item == null) return;
+
+            if (item.skin != config.Settings.transmitterSkinID && item.name != config.Settings.transmitterName) return;
+
+            BaseEntity transmitter = item.GetHeldEntity();
+
+            if (transmitter == null) return;
+
+            if (TransmitterTracker.Transmitters.ContainsKey(transmitter.net.ID.Value)) return;
+            
+            if (transmitter is DroppedItem transmitterDropped)
+            {
+                transmitterDropped.item.GetHeldEntity().gameObject.AddComponent<TransmitterTracker>();
+                return;
+            }
+
+            transmitter.gameObject.AddComponent<TransmitterTracker>();
         }
 
         private void Unload()
@@ -163,7 +187,6 @@ namespace Oxide.Plugins
             var vehicleLicenses = (config.Settings.sortLicenses && !VehicleLicenceUI)
                         ? VehicleLicence.Instance?.GetVehicleLicenses(player.userID.Get())
                         : VehicleLicence.Instance?.GetVehicleLicenses(player.userID.Get()).OrderBy(x => x).ToList();
-
             
 
             List<Item> playerInv = GetPlayerInv(player);
@@ -342,7 +365,9 @@ namespace Oxide.Plugins
             }
 
             player.inventory.GiveItem(transmitter);
-            transmitter.GetHeldEntity().gameObject.AddComponent<TransmitterTracker>();
+            
+            if (!TransmitterTracker.Transmitters.ContainsKey(transmitter.GetHeldEntity().net.ID.Value))
+                transmitter.GetHeldEntity().gameObject.AddComponent<TransmitterTracker>();
         }
         #endregion
 
@@ -587,7 +612,6 @@ namespace Oxide.Plugins
 
                         for (int i = 0; i < vehicleLicenses.Count; i++)
                         {
-                            
                             string numberColor = VLT.config.Settings.numberListColor;
                             string vehicleColor = VLT.config.Settings.vehicleListColor;
                             string numberText = $"{i + 2}";
@@ -731,6 +755,7 @@ namespace Oxide.Plugins
                 numberListColor = "orange",
                 vehicleListColor = "#009eff",
                 syncFrequencyWhenMount = false,
+                updateTranmitterOnSpawned = false,
                 sortLicenses = false,
                 distanceToDetect = 10.0f,
                 amountOfTime = 3.0f
@@ -882,6 +907,9 @@ namespace Oxide.Plugins
         [JsonProperty(PropertyName = "Auto sync frequency when mounting vehicle? [Default is false]")]
         public bool syncFrequencyWhenMount;
 
+        [JsonProperty(PropertyName = "Re-attach object to the Transmitter when recieving one? [Good for plugins that restore items on death]")]
+        public bool updateTranmitterOnSpawned;
+
         [JsonProperty(PropertyName = "Distance from vehicle to detect it? [Default: 10]")]
         public float distanceToDetect;
 
@@ -891,10 +919,10 @@ namespace Oxide.Plugins
 
     public class ServerCommands
     {
-        [JsonProperty(PropertyName = "Commands to give a transmitter")]
+        [JsonProperty(PropertyName = "Commands to give a transmitter", ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public List<string> TransmitterCmd;
 
-        [JsonProperty(PropertyName = "Commands to give all vehicle items")]
+        [JsonProperty(PropertyName = "Commands to give all vehicle items",ObjectCreationHandling = ObjectCreationHandling.Replace)]
         public List<string> AllItemsCmd;
     }
 
