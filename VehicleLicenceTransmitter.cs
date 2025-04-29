@@ -60,7 +60,7 @@ namespace Oxide.Plugins
 
             if (config.Settings.syncFrequencyWhenMount) Subscribe(nameof(OnEntityMounted));
 
-            if (config.Settings.updateTranmitterOnSpawned) Subscribe(nameof(OnItemAddedToContainer));
+            if (config.Settings.updateTranmitterOnSpawned) Subscribe(nameof(OnEntitySpawned));
 
             permission.RegisterPermission(config.Perms.UseTransmitterPerm, this);
             permission.RegisterPermission(config.Perms.Admin, this);
@@ -90,6 +90,7 @@ namespace Oxide.Plugins
                 if (transmitter == null) continue;
                 if (item == null) continue;
                 if (item.skin != config.Settings.transmitterSkinID && item.name != config.Settings.transmitterName) continue;
+                if (TransmitterTracker.Transmitters.ContainsKey(transmitter.net.ID.Value)) continue;
 
                 if (transmitter is DroppedItem transmitterDropped)
                 {
@@ -127,28 +128,7 @@ namespace Oxide.Plugins
             Unsubscribe(nameof(OnEntityMounted));
             Unsubscribe(nameof(OnEntityBuilt));
             Unsubscribe(nameof(CanBuild));
-            Unsubscribe(nameof(OnItemAddedToContainer));
-        }
-
-        private void OnItemAddedToContainer(ItemContainer instance, Item item)
-        {
-            if (item == null) return;
-
-            if (item.skin != config.Settings.transmitterSkinID && item.name != config.Settings.transmitterName) return;
-
-            BaseEntity transmitter = item.GetHeldEntity();
-
-            if (transmitter == null) return;
-
-            if (TransmitterTracker.Transmitters.ContainsKey(transmitter.net.ID.Value)) return;
-            
-            if (transmitter is DroppedItem transmitterDropped)
-            {
-                transmitterDropped.item.GetHeldEntity().gameObject.AddComponent<TransmitterTracker>();
-                return;
-            }
-
-            transmitter.gameObject.AddComponent<TransmitterTracker>();
+            Unsubscribe(nameof(OnEntitySpawned));
         }
 
         private void Unload()
@@ -169,6 +149,25 @@ namespace Oxide.Plugins
         {
             if (!config.Settings.giveOnPurchased) return;
             GiveTransmitter(player);
+        }
+
+        private void OnEntitySpawned(Detonator detonator)
+        {
+            if (detonator == null) return;
+            
+            BaseEntity transmitter = (BaseEntity)detonator;
+            
+            if (TransmitterTracker.Transmitters.ContainsKey(transmitter.net.ID.Value)) return;
+            
+            if (transmitter.skinID != config.Settings.transmitterSkinID && transmitter._name != config.Settings.transmitterName) return;
+            
+            if (transmitter is DroppedItem transmitterDropped)
+            {
+                transmitterDropped.item.GetHeldEntity().gameObject.AddComponent<TransmitterTracker>();
+                return;
+            }
+
+            transmitter.gameObject.AddComponent<TransmitterTracker>();
         }
 
         private void OnEntityMounted(BaseMountable mountable, BasePlayer player)
@@ -365,9 +364,7 @@ namespace Oxide.Plugins
             }
 
             player.inventory.GiveItem(transmitter);
-            
-            if (!TransmitterTracker.Transmitters.ContainsKey(transmitter.GetHeldEntity().net.ID.Value))
-                transmitter.GetHeldEntity().gameObject.AddComponent<TransmitterTracker>();
+            transmitter.GetHeldEntity().gameObject.AddComponent<TransmitterTracker>();
         }
         #endregion
 
