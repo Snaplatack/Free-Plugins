@@ -35,6 +35,8 @@ namespace Oxide.Plugins
 
             AddCovalenceCommand(cmd, nameof(UpdateDataVariable), perm);
 
+            LoadCustomSettings();
+
             UpdateVehicleData();
 
             UpdateVLSettings();
@@ -61,7 +63,11 @@ namespace Oxide.Plugins
         #region Commands
         private void UpdateDataVariable(IPlayer player, string cmd, string[] args)
         {
-            // Command Format: /snaplatackvvldata <reload> | /snapvldata <reset> | /snapvldata <set> <vehicleName> <displayname | skin>
+            // Command Format:
+            // /snapvldata <reload>
+            // /snapvldata <reset>
+            // /snapvldata <set> <displayname | skin> <vehicleName> <new value>
+
             if (player == null && !player.IsServer) return;
 
             if (args.Length < 1)
@@ -92,46 +98,52 @@ namespace Oxide.Plugins
 
             string dataTypePassed = args[1].ToLower();
 
-            string vehicleName = args[2].ToLower();
-
-            string newName = args[3];
-
-            ulong.TryParse(newName, out ulong newID);
-
-            VehicleLicenceVehicles DataEntry = VehicleLicenceNames.vehicles.Find(x => x.VLName.ToLower() == vehicleName);
-
-            if (DataEntry == null)
+            if (dataTypePassed != "skin")
             {
                 Message(player, errorMsg);
                 return;
             }
 
-            switch (dataTypePassed)
+            string vehicleName = args[2].ToLower();
+
+            ulong.TryParse(args[3], out ulong newID);
+
+            string msg;
+
+            VehicleLicenceVehicles DataEntry = VehicleLicenceNames.vehicles.Find(x => x.VLName.ToLower() == vehicleName);
+
+            if (DataEntry == null || VehicleLicenceNames.vehicles.Count == 0)
             {
-                case ("displayname"):
-                {  
-                    DataEntry.VLDisplayName = newName;
-                    dataTypePassed = dataTypePassed.Insert(7, " ");
-                    break;
-                }
-                case ("skin"):
-                {
-                    DataEntry.SkinID = newID;
-                    newName = newID.ToString();
-                    break;
-                }
-                default:
-                    Message(player, errorMsg);
-                    return;
+                msg = "NO DATA FOUND! Resetting Data...";
+                Message(player, msg);
+                UpdateVehicleData(true);
+                return;
             }
 
-            Message(player, $"Updated the {dataTypePassed} for the {DataEntry.VLName} with {newName}!");
+            SkinHistory skinData = CustomSettings.skinIsCustom[DataEntry.VLName];
+
+            if (newID != 0)
+            {
+                skinData.newID = newID;
+                DataEntry.SkinID = newID;
+                msg = $"Updated the {dataTypePassed} for the {DataEntry.VLName} with {newID}!";
+            }
+            else
+            {
+                skinData.newID = 0;
+                DataEntry.SkinID = skinData.originalID;
+                msg = $"Reset the {dataTypePassed} for the {DataEntry.VLName}!";
+            }
+
+            Message(player, msg);
 
             SaveVLVehicles();
         }
         #endregion
 
         #region Methods
+
+        #region Update Data
         private void UpdateVLSettings()
         {
             var VLData = VehicleLicence.Instance.configData.chat;
@@ -152,25 +164,28 @@ namespace Oxide.Plugins
             SaveVLChatSettings();
         }
 
-        private void UpdateVehicleData(bool skipLoad = false)
+        private void UpdateVehicleData(bool resetData = false)
         {
             int i = 2;
-            int position = 0;
             string[] carBS = new string[] {"SmallCar", "MediumCar", "LargeCar"};
             var karuzaVehicleConfig = Config.ReadObject<KaruzaConfiguration>($"{Interface.Oxide.ConfigDirectory}/KaruzaVehicleItemManager.json");
             var karuzaVehicleParams = karuzaVehicleConfig.VehicleItems.Count != 0 ? karuzaVehicleConfig.VehicleItems : new();
 
             if (karuzaVehicleParams.Count == 0) Puts($"Loaded '?' for all custom vehicle icons because KaruzaVehicleItemManager is missing!");
 
-            if (!config.settings.resetData) LoadData();
-
-            if (skipLoad) VehicleLicenceNames.vehicles.Clear();
+            if (resetData)
+            {
+                VehicleLicenceNames.vehicles = new();
+                CustomSettings.skinIsCustom = new();
+            }
 
             foreach (var vehicleType in VehicleLicence.Instance.allVehicleSettings)
             {
                 VehicleLicenceVehicles VLParams = new();
 
-                if (VehicleLicenceNames.vehicles.Exists(x => x.VLName == vehicleType.Key) && !config.settings.resetData) continue;
+                CustomSettings.skinIsCustom.TryGetValue(vehicleType.Key, out SkinHistory customSkinIDs);
+
+                if (customSkinIDs == null) CustomSettings.skinIsCustom[vehicleType.Key] = customSkinIDs = new();
 
                 if (vehicleType.Value.CustomVehicle)
                 {
@@ -183,12 +198,22 @@ namespace Oxide.Plugins
                         }
                             
                         VLParams.PrefabName = CleanVehicleName(karuzaVehicleParams.Find(x => CleanVehicleName(x.VLName) == CleanVehicleName(vehicleType.Key)).VLName);
-                        VLParams.SkinID = karuzaVehicleParams.Find(x => CleanVehicleName(x.VLName) == CleanVehicleName(vehicleType.Key)).SkinID;
+
+                        CustomSettings.skinIsCustom[vehicleType.Key].originalID = karuzaVehicleParams.Find(x => CleanVehicleName(x.VLName) == CleanVehicleName(vehicleType.Key)).SkinID;
+                        
+                        VLParams.SkinID = customSkinIDs.newID == 0
+                            ? karuzaVehicleParams.Find(x => CleanVehicleName(x.VLName) == CleanVehicleName(vehicleType.Key)).SkinID
+                            : customSkinIDs.newID;
                     }
                     else
                     {
                         VLParams.PrefabName = vehicleType.Key.ToLower();
-                        VLParams.SkinID = removedVehicles.Find(x => x.vehicleName == vehicleType.Key).vehicleID;
+
+                        CustomSettings.skinIsCustom[vehicleType.Key].originalID = removedVehicles.Find(x => x.vehicleName == vehicleType.Key).vehicleID;
+
+                        VLParams.SkinID = customSkinIDs.newID == 0
+                            ? removedVehicles.Find(x => x.vehicleName == vehicleType.Key).vehicleID
+                            : customSkinIDs.newID;
                     }
                 }
                 else
@@ -199,7 +224,12 @@ namespace Oxide.Plugins
                         i++;
                     }
 
-                    VLParams.SkinID = vehicleItems.Find(value => value.VLName == vehicleType.Key).SkinID;
+                    CustomSettings.skinIsCustom[vehicleType.Key].originalID = vehicleItems.Find(value => value.VLName == vehicleType.Key).SkinID;
+
+                    VLParams.SkinID = customSkinIDs.newID == 0
+                        ? vehicleItems.Find(value => value.VLName == vehicleType.Key).SkinID
+                        : customSkinIDs.newID;
+
                     VLParams.PrefabName = vehicleItems.Find(value => value.VLName == vehicleType.Key).PrefabName;
                 }
 
@@ -216,19 +246,44 @@ namespace Oxide.Plugins
                 {
                     if (vehicleType.Value.PurchasePrices.Count == 0) break;
 
-                    PriceInfo prices = new();
+                    PriceInfo purchasePrices = new();
 
-                    prices.amount = price.Value.amount;
-                    prices.displayName = price.Value.displayName;
+                    purchasePrices.amount = price.Value.amount;
+                    purchasePrices.displayName = price.Value.displayName;
 
-                    VLParams.PurchasePrices.Add(price.Key, prices);
+                    VLParams.PurchasePrices.Add(purchasePrices);
+                }
+
+                foreach (var price in vehicleType.Value.SpawnPrices)
+                {
+                    if (vehicleType.Value.SpawnPrices.Count == 0) break;
+
+                    PriceInfo spawnPrices = new();
+
+                    spawnPrices.amount = price.Value.amount;
+                    spawnPrices.displayName = price.Value.displayName;
+
+                    VLParams.SpawnPrices.Add(spawnPrices);
+                }
+
+                foreach (var price in vehicleType.Value.RecallPrices)
+                {
+                    if (vehicleType.Value.RecallPrices.Count == 0) break;
+
+                    PriceInfo recallPrices = new();
+
+                    recallPrices.amount = price.Value.amount;
+                    recallPrices.displayName = price.Value.displayName;
+
+                    VLParams.RecallPrices.Add(recallPrices);
                 }
 
                 VehicleLicenceNames.vehicles.Add(VLParams);
             }
-        
+
             SaveVLVehicles();
         }
+        #endregion
 
         private void ReloadPlugins()
         {
@@ -259,6 +314,7 @@ namespace Oxide.Plugins
         #region Data File
         public VehicleLicenceData VehicleLicenceNames = new VehicleLicenceData();
         public VLChatData VLChatParams = new VLChatData();
+        public CustomData CustomSettings = new CustomData();
 
         public class VehicleLicenceData
         {
@@ -270,24 +326,27 @@ namespace Oxide.Plugins
             public VLChatSettings settings = new();
         }
 
-        private void LoadData()
+        public class CustomData
+        {
+            public Dictionary<string, SkinHistory> skinIsCustom = new();
+        }
+
+        private void LoadCustomSettings()
         {
             try
             {
-                VehicleLicenceNames = Interface.Oxide.DataFileSystem.ReadObject<VehicleLicenceData>($"{Name}/VehicleLicenceNames");
-                VLChatParams = Interface.Oxide.DataFileSystem.ReadObject<VLChatData>($"{Name}/VehicleLicenceChatSettings");
+                CustomSettings = Interface.Oxide.DataFileSystem.ReadObject<CustomData>($"{Name}/CustomSettings");
             }
-
             catch (Exception)
             {
-                VehicleLicenceNames = new VehicleLicenceData();
-                VLChatParams = new VLChatData();
+                CustomSettings = new CustomData();
             }
         }
 
         private void SaveVLVehicles()
         {
             Interface.Oxide.DataFileSystem.WriteObject($"{Name}/VehicleLicenceNames", VehicleLicenceNames);
+            Interface.Oxide.DataFileSystem.WriteObject($"{Name}/CustomSettings", CustomSettings);
         }
 
         private void SaveVLChatSettings()
@@ -304,8 +363,7 @@ namespace Oxide.Plugins
             public PluginSettings settings = new PluginSettings
             {
                 autoUnload = false,
-                autoReload = false,
-                resetData = false
+                autoReload = false
             };
  
             public Core.VersionNumber Version = new Core.VersionNumber(0, 0, 0);
@@ -361,6 +419,7 @@ namespace Oxide.Plugins
         #endregion
         
         #region Hard Coded Data
+
         #region Vanilla Vehicles
         public readonly List<VanillaVehicleItems> vehicleItems = new List<VanillaVehicleItems>
         {
@@ -431,6 +490,7 @@ namespace Oxide.Plugins
             new RemovedVehicles { vehicleName = "TinFighterDetailedOld", vehicleID = 3465742429 },
         };
         #endregion
+
         #endregion
 
         public class PluginSettings
@@ -440,16 +500,19 @@ namespace Oxide.Plugins
 
             [JsonProperty(PropertyName = "Auto reload associated plugins after updating data?")]
             public bool autoReload;
-
-            [JsonProperty(PropertyName = "Reset data file on every reload? [true = reset on load]")]
-            public bool resetData;
         }
 
-        public class CustomVehicleItems
+        public class KaruzaVehicleItems
         {
             [JsonProperty(PropertyName = "PrefabPath")]
-            public string VLName { get; set; }
-            public ulong SkinID { get; set; }
+            public string VLName { get; set; } = string.Empty;
+            public ulong SkinID { get; set; } = 0;
+        }
+
+        public class SkinHistory
+        {
+            public ulong originalID { get; set; }
+            public ulong newID = 0;
         }
 
         public class VanillaVehicleItems
@@ -462,7 +525,7 @@ namespace Oxide.Plugins
         public class KaruzaConfiguration
         {
             public bool SubscribeToOnEntityBuilt = true;
-            public List<CustomVehicleItems> VehicleItems = new List<CustomVehicleItems>();
+            public List<KaruzaVehicleItems> VehicleItems = new List<KaruzaVehicleItems>();
         }
 
         public class VLChatSettings
@@ -471,8 +534,8 @@ namespace Oxide.Plugins
             public string recallCmd { get; set; }
             public string killCmd { get; set; }
 
-            public string prefix { get; set; }
-            public ulong steamIDIcon { get; set; }
+            public string prefix { get; set; } = string.Empty;
+            public ulong steamIDIcon { get; set; } = 0;
         }
 
         public class PriceInfo
@@ -491,7 +554,9 @@ namespace Oxide.Plugins
             public string PrefabName { get; set; }
             public string FuckOffFacepunch { get; set; } // Fuck Facepunch
             public ulong SkinID { get; set; }
-            public Dictionary<string, PriceInfo> PurchasePrices { get; set; }
+            public List<PriceInfo> PurchasePrices { get; set; } = new();
+            public List<PriceInfo> SpawnPrices { get; set; } = new();
+            public List<PriceInfo> RecallPrices { get; set; } = new();
         }
 
         public class RemovedVehicles

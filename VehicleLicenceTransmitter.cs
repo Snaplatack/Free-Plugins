@@ -1,5 +1,3 @@
-// Requires: VehicleLicence
-
 using System.Collections.Generic;
 using System.Linq;
 using System;
@@ -20,9 +18,9 @@ namespace Oxide.Plugins
     {
         #region Variables
         [PluginReference]
-        private readonly Plugin Toastify, VehicleLicenceUI, SnaplatacksVLData;
+        private readonly Plugin VehicleLicence, VehicleLicenceUI, Toastify, SnaplatacksVLData;
         public static VehicleLicenceTransmitter Instance;
-        private VLChatSettings vlChatSettings = new VLChatSettings();
+        private VLChatSettings VLChat = new();
         private List<VehicleLicenceVehicles> VData = new();
         private static int layers = LayerMask.GetMask(
                     LayerMask.LayerToName((int)Rust.Layer.World),
@@ -65,8 +63,6 @@ namespace Oxide.Plugins
             permission.RegisterPermission(config.Perms.UseTransmitterPerm, this);
             permission.RegisterPermission(config.Perms.Admin, this);
 
-            if (config.VLSettings.unloadVLCommands) UnloadVLCommands();
-
             var snapsVehicles = Config.ReadObject<SnaplatacksVLConfiguration>($"{Interface.Oxide.DataDirectory}/SnaplatacksVLData/VehicleLicenceNames.json");
             var snapsVehicleData = snapsVehicles.vehicles.Count != 0 ? snapsVehicles.vehicles : new();
 
@@ -84,13 +80,27 @@ namespace Oxide.Plugins
                 VData.Add(VLParams);
             }
 
-            foreach (var transmitter in BaseNetworkable.serverEntities.OfType<BaseEntity>())
+            var snapsSettings = Config.ReadObject<SnaplatacksVLSettings>($"{Interface.Oxide.DataDirectory}/SnaplatacksVLData/VehicleLicenceChatSettings.json");
+            var snapsChatSettings = snapsSettings.settings;
+
+            VLChatSettings chatSettings = new();
+
+            chatSettings.spawnCmd = snapsChatSettings.spawnCmd;
+            chatSettings.recallCmd = snapsChatSettings.recallCmd;
+            chatSettings.killCmd = snapsChatSettings.killCmd;
+
+            VLChat = chatSettings;
+
+            foreach (var detonator in BaseNetworkable.serverEntities.OfType<Detonator>())
             {
-                var item = transmitter.GetItem();
+                if (detonator == null) continue;
+
+                BaseEntity transmitter = (BaseEntity)detonator;
+                
                 if (transmitter == null) continue;
-                if (item == null) continue;
-                if (item.skin != config.Settings.transmitterSkinID && item.name != config.Settings.transmitterName) continue;
-                if (TransmitterTracker.Transmitters.ContainsKey(transmitter.net.ID.Value)) continue;
+
+                if (transmitter.skinID != config.Settings.transmitterSkinID && transmitter._name != config.Settings.transmitterName) continue;
+                if (transmitter.transform.position == new Vector3(0, 0, 0)) continue;
 
                 if (transmitter is DroppedItem transmitterDropped)
                 {
@@ -100,27 +110,6 @@ namespace Oxide.Plugins
 
                 transmitter.gameObject.AddComponent<TransmitterTracker>();
             }
-
-            // Used to give a user all vehicles for testing. Just keeping till release
-            foreach (var vehicle in VehicleLicence.Instance.allVehicleSettings)
-            {
-            	// Snaplatacks ID: 76561198205006377
-                // Format: VehicleLicence.Instance.RemoveVehicleLicense(PLAYERS_STEAM_ID, vehicle.Value.VLName);
-   
-                //VehicleLicence.Instance.RemoveVehicleLicense(76561198205006377, vehicle.Key);
-                
-                //if (vehicle.Value.CustomVehicle) continue; // comment out for vanilla vehicles
-
-                // Format: VehicleLicence.Instance.AddVehicleLicense(PLAYERS_STEAM_ID, vehicle.Value.VLName);
-                //VehicleLicence.Instance.AddVehicleLicense(76561198205006377, vehicle.Key);
-
-            }
-
-            if (VehicleLicenceUI) // used to auto update the UI when we make changes here
-            {
-                Interface.Oxide.ReloadPlugin(VehicleLicenceUI.Name);
-            }
-
         }
         	
         private void Init()
@@ -129,6 +118,13 @@ namespace Oxide.Plugins
             Unsubscribe(nameof(OnEntityBuilt));
             Unsubscribe(nameof(CanBuild));
             Unsubscribe(nameof(OnEntitySpawned));
+        }
+
+        private void Loaded()
+        {
+            if (!VehicleLicence)
+                Interface.Oxide.UnloadPlugin(Name);
+            return;
         }
 
         private void Unload()
@@ -158,8 +154,8 @@ namespace Oxide.Plugins
             BaseEntity transmitter = (BaseEntity)detonator;
             
             if (TransmitterTracker.Transmitters.ContainsKey(transmitter.net.ID.Value)) return;
-            
             if (transmitter.skinID != config.Settings.transmitterSkinID && transmitter._name != config.Settings.transmitterName) return;
+            if (transmitter.transform.position == new Vector3(0, 0, 0)) return;
             
             if (transmitter is DroppedItem transmitterDropped)
             {
@@ -183,10 +179,10 @@ namespace Oxide.Plugins
 
             Detonator transmitter = null;
 
-            var vehicleLicenses = (config.Settings.sortLicenses && !VehicleLicenceUI)
-                        ? VehicleLicence.Instance?.GetVehicleLicenses(player.userID.Get())
-                        : VehicleLicence.Instance?.GetVehicleLicenses(player.userID.Get()).OrderBy(x => x).ToList();
-            
+            List<string> vehicleLicenses = (List<string>)VehicleLicence.Call("GetVehicleLicenses", player.userID.Get());
+
+            if (!config.Settings.sortLicenses && VehicleLicenceUI)
+                vehicleLicenses = vehicleLicenses.OrderBy(x => x).ToList();          
 
             List<Item> playerInv = GetPlayerInv(player);
 
@@ -248,7 +244,7 @@ namespace Oxide.Plugins
 
             var player = item.GetOwnerPlayer();
 
-            bool isSpawned = VehicleLicence.Instance.SpawnLicensedVehicle(player, vName, VehicleLicence.Instance.configData.chat.spawnCommand, true);
+            bool isSpawned = (bool)VehicleLicence.Call("SpawnLicensedVehicle", player, vName, VLChat.spawnCmd, true);
 
             if (!isSpawned) return false;
 
@@ -415,13 +411,13 @@ namespace Oxide.Plugins
 
             msg = String.Format(msg, vehicle);
 
-            if (vlChatSettings.prefix == string.Empty)
+            if (VLChat.prefix == string.Empty)
             {
-                Player.Message(player, String.Format(msg, vehicle), vlChatSettings.steamIDIcon);
+                Player.Message(player, String.Format(msg, vehicle), VLChat.steamIDIcon);
                 return;
             }
 
-            Player.Message(player, $"{vlChatSettings.prefix} " + String.Format(msg, vehicle), vlChatSettings.steamIDIcon);
+            Player.Message(player, $"{VLChat.prefix} " + String.Format(msg, vehicle), VLChat.steamIDIcon);
         }
 
         private Item GiveVehicleItem(BasePlayer player, string vName)
@@ -503,44 +499,6 @@ namespace Oxide.Plugins
         }
         #endregion
 
-        #region Unload VL Commands
-        private void UnloadVLCommands()
-        {
-            Puts($"Unloading commands in {VehicleLicence.Instance.Name}!");
-            timer.Once(0.1f, () =>
-            {
-                foreach (var entry in VehicleLicence.Instance.allVehicleSettings)
-                {
-                    foreach (var command in entry.Value.Commands)
-                    {
-                        if (string.IsNullOrEmpty(command)) continue;
-
-                        if (VehicleLicence.Instance.configData.chat.useUniversalCommand)
-                        {
-                            if (config.VLSettings.unloadUniversalVLCommands) cmd.RemoveChatCommand(command, VehicleLicence.Instance);
-                        }
-
-                        if (!string.IsNullOrEmpty(VehicleLicence.Instance.configData.chat.customKillCommandPrefix))
-                        {
-                            if (config.VLSettings.unloadKillVLCommands) cmd.RemoveChatCommand(VehicleLicence.Instance.configData.chat.customKillCommandPrefix + command, VehicleLicence.Instance);
-                        }
-                    }
-                }
-                if (config.VLSettings.unloadBuyVLCommands)
-                    cmd.RemoveChatCommand(VehicleLicence.Instance.configData.chat.buyCommand, VehicleLicence.Instance);
-                if (config.VLSettings.unloadSpawnVLCommands)
-                    cmd.RemoveChatCommand(VehicleLicence.Instance.configData.chat.spawnCommand, VehicleLicence.Instance);
-                if (config.VLSettings.unloadRecallVLCommands)
-                    cmd.RemoveChatCommand(VehicleLicence.Instance.configData.chat.recallCommand, VehicleLicence.Instance);
-                if (config.VLSettings.unloadKillVLCommands)
-                    cmd.RemoveChatCommand(VehicleLicence.Instance.configData.chat.killCommand, VehicleLicence.Instance);
-                if (config.VLSettings.unloadHelpVLCommands)
-                    cmd.RemoveChatCommand(VehicleLicence.Instance.configData.chat.helpCommand, VehicleLicence.Instance);
-                Puts($"Successfully unloaded commands in {VehicleLicence.Instance.Name}!");
-            });
-        }
-        #endregion
-
         #region MonoBehaviour
         public class TransmitterTracker : MonoBehaviour // Huge thanks to Karuza for helping here <3
         {
@@ -584,9 +542,11 @@ namespace Oxide.Plugins
                     isPressed = true;
                     timeToKill = Time.time + VLT.config.Settings.amountOfTime;
                     frequency = transmitter.frequency;
-                    var vehicleLicenses = (VLT.config.Settings.sortLicenses && !VLT.VehicleLicenceUI)
-                        ? VehicleLicence.Instance?.GetVehicleLicenses(player.userID.Get())
-                        : VehicleLicence.Instance?.GetVehicleLicenses(player.userID.Get()).OrderBy(x => x).ToList();
+
+                    List<string> vehicleLicenses = VLT.VehicleLicence.Call<List<string>>("GetVehicleLicenses", player.userID.Get());
+
+                    if (!VLT.config.Settings.sortLicenses && VLT.VehicleLicenceUI)
+                        vehicleLicenses.OrderBy(x => x).ToList();
 
                     if (!VLT.permission.UserHasPermission(player.UserIDString, VLT.config.Perms.UseTransmitterPerm))
                         return;
@@ -658,7 +618,7 @@ namespace Oxide.Plugins
                                 if (i == vehicleLicenses.Count - 1) vName = String.Empty;
                             }
 
-                            if (vName != String.Empty)
+                            if (!string.IsNullOrEmpty(vName))
                             {
                                 VLT.SendMessage(player.IPlayer, "CurrentRecallVehicle", VLT.ConvertVehicleName(vName, false, false, true), true);
                                 VLT.UpdateFrequency(transmitter, frequency);
@@ -679,17 +639,24 @@ namespace Oxide.Plugins
                                 }
                             }
 
-                            vehicle = VehicleLicence.Instance.GetLicensedVehicle(player.userID.Get(), vName) as BaseVehicle;
+                            if (string.IsNullOrEmpty(vName))
+                            {
+                                VLT.UpdateFrequency(transmitter, 0);
+                                return;
+                            }
+                            
+
+                            vehicle = (BaseVehicle)VLT.VehicleLicence?.Call("GetLicensedVehicle", player.userID.Get(), vName);
 
                             if (vehicle == null)
                             {
-                                VehicleLicence.Instance.SpawnLicensedVehicle(player, vName, VehicleLicence.Instance.configData.chat.spawnCommand);
+                                VLT.VehicleLicence.Call("SpawnLicensedVehicle", player, vName, VLT.VLChat.spawnCmd);
 
                                 if (VLT.config.Settings.givePlaceableItem) VLT.RemoveVehicleItem(player, vName);
                             }
                             else
                             {
-                                VehicleLicence.Instance.RecallLicensedVehicle(player, vName, VehicleLicence.Instance.configData.chat.recallCommand);
+                                VLT.VehicleLicence.Call("RecallLicensedVehicle", player, vName, VLT.VLChat.recallCmd);
                             }
                         }
                     }
@@ -706,9 +673,9 @@ namespace Oxide.Plugins
 
                     if (vehicle != null)
                     {
-                        vehicle = (BaseVehicle)VehicleLicence.Instance.GetLicensedVehicle(player.userID.Get(), vName);
+                        vehicle = (BaseVehicle)VLT.VehicleLicence?.Call("GetLicensedVehicle", player.userID.Get(), vName);
 
-                        VehicleLicence.Instance.KillLicensedVehicle(player, vName);
+                        VLT.VehicleLicence.Call("KillLicensedVehicle", player, vName);
 
                         if (vehicle == null) return;
 
@@ -945,14 +912,23 @@ namespace Oxide.Plugins
     }
 
     public class VLChatSettings
-    {
-        public string prefix = VehicleLicence.Instance.configData.chat.prefix != string.Empty ? VehicleLicence.Instance.configData.chat.prefix : string.Empty;
-        public ulong steamIDIcon = VehicleLicence.Instance.configData.chat.steamIDIcon != 0 ? VehicleLicence.Instance.configData.chat.steamIDIcon : 0;
+    {   
+        public string spawnCmd { get; set; }
+        public string recallCmd { get; set; }
+        public string killCmd { get; set; }
+
+        public string prefix { get; set; }
+        public ulong steamIDIcon { get; set; }
     }
 
     public class SnaplatacksVLConfiguration
     {
         public List<VehicleLicenceVehicles> vehicles = new List<VehicleLicenceVehicles>();
+    }
+
+    public class SnaplatacksVLSettings
+    {
+        public VLChatSettings settings = new VLChatSettings();
     }
 
     public class VanillaVehicleItems
@@ -962,8 +938,14 @@ namespace Oxide.Plugins
         public ulong SkinID { get; set; }
     }
 
+    public class PriceInfo
+    {
+        public int amount;
+        public string displayName;
+    }
+ 
     public class VehicleLicenceVehicles
-    {    
+    {
         public string VLName { get; set; }
         public string VLDisplayName { get; set; }
         public bool IsWaterVehicle { get; set; }
@@ -972,6 +954,9 @@ namespace Oxide.Plugins
         public string PrefabName { get; set; }
         public string FuckOffFacepunch { get; set; } // Fuck Facepunch
         public ulong SkinID { get; set; }
+        public List<PriceInfo> PurchasePrices { get; set; } = new();
+        public List<PriceInfo> SpawnPrices { get; set; } = new();
+        public List<PriceInfo> RecallPrices { get; set; } = new();
     }
     #endregion
 }

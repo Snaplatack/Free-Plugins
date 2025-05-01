@@ -1,6 +1,4 @@
-﻿// Requires: VehicleLicence
-
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Core.Plugins;
@@ -17,9 +15,9 @@ namespace Oxide.Plugins
     {
         #region Global Vars
         [PluginReference]
-        private readonly Plugin ServerRewards, Economics;
+        private readonly Plugin VehicleLicence, ServerRewards, Economics;
         public static VehicleLicenceAddons Instance;
-        public VLChatSettings vlChatSettings = new VLChatSettings();
+        private VLChatSettings VLChat = new();
         #endregion
 
         #region Init
@@ -41,6 +39,24 @@ namespace Oxide.Plugins
             permission.RegisterPermission(config.cmdPerms.vAdminPerm, this);
 
             LoadData();
+
+            var snapsSettings = Config.ReadObject<SnaplatacksVLSettings>($"{Interface.Oxide.DataDirectory}/SnaplatacksVLData/VehicleLicenceChatSettings.json");
+            var snapsChatSettings = snapsSettings.settings;
+
+            VLChatSettings chatSettings = new();
+
+            chatSettings.spawnCmd = snapsChatSettings.spawnCmd;
+            chatSettings.recallCmd = snapsChatSettings.recallCmd;
+            chatSettings.killCmd = snapsChatSettings.killCmd;
+
+            VLChat = chatSettings;
+        }
+
+        private void Loaded()
+        {
+            if (!VehicleLicence)
+                Interface.Oxide.UnloadPlugin(Name);
+            return;
         }
 
         private void Unload()
@@ -87,9 +103,9 @@ namespace Oxide.Plugins
                     return;
                 }
 
-                playerLicenses = (List<string>)VehicleLicence.Instance.GetVehicleLicenses(iPlayerFoundID);
+                playerLicenses = (List<string>)VehicleLicence.Call("GetVehicleLicenses", iPlayerFoundID);
             }
-            else playerLicenses = (List<string>)VehicleLicence.Instance.GetVehicleLicenses(playerID);
+            else playerLicenses = (List<string>)VehicleLicence.Call("GetVehicleLicenses", playerID);
 
             if (playerLicenses == null)
             {
@@ -138,9 +154,9 @@ namespace Oxide.Plugins
                     return;
                 }
 
-                playerLicenses = (List<string>)VehicleLicence.Instance.GetVehicleLicenses(iPlayerFoundID);
+                playerLicenses = (List<string>)VehicleLicence.Call("GetVehicleLicenses", iPlayerFoundID);
             }
-            else playerLicenses = (List<string>)VehicleLicence.Instance.GetVehicleLicenses(playerID);
+            else playerLicenses = (List<string>)VehicleLicence.Call("GetVehicleLicenses", playerID);
 
             if (playerLicenses == null)
             {
@@ -154,7 +170,9 @@ namespace Oxide.Plugins
 
             for (int i = 0; i < playerLicenses.Count; i++) // will need changed to support 'config.settings.othersViewAllVehicles' perm
             {
-                vehicle = !iPlayer.IsServer ? (BaseVehicle)VehicleLicence.Instance.GetLicensedVehicle(playerID, playerLicenses[i]) : (BaseVehicle)VehicleLicence.Instance.GetLicensedVehicle(iPlayerFoundID, playerLicenses[i]);
+                vehicle = !iPlayer.IsServer
+                    ? (BaseVehicle)VehicleLicence.Call("GetLicensedVehicle", playerID, playerLicenses[i])
+                    : (BaseVehicle)VehicleLicence.Call("GetLicensedVehicle", iPlayerFoundID, playerLicenses[i]);
 
                 if (vehicle == null) continue;
 
@@ -198,11 +216,11 @@ namespace Oxide.Plugins
                 return;
             }
 
-            List<string> playerLicensesSender = (List<string>)VehicleLicence.Instance.GetVehicleLicenses(SenderID);
+            List<string> playerLicensesSender = (List<string>)VehicleLicence.Call("GetVehicleLicenses", SenderID);
 
             vehicleName = playerLicensesSender.Find(value => value.ToLower() == vehicleName);
 
-            var recieverHasLicense = (bool)VehicleLicence.Instance.HasVehicleLicense(RecieverID, vehicleName);
+            var recieverHasLicense = (bool)VehicleLicence.Call("HasVehicleLicense", RecieverID, vehicleName);
 
             if (recieverHasLicense)
             {
@@ -210,11 +228,11 @@ namespace Oxide.Plugins
                 return;
             }
 
-            bool isAdded = (bool)VehicleLicence.Instance.AddVehicleLicense(RecieverID, vehicleName);
+            bool isAdded = (bool)VehicleLicence.Call("AddVehicleLicense", RecieverID, vehicleName);
 
-            BaseVehicle vehicle = (BaseVehicle)VehicleLicence.Instance.GetLicensedVehicle(SenderID, vehicleName);
+            BaseVehicle vehicle = (BaseVehicle)VehicleLicence.Call("GetLicensedVehicle", SenderID, vehicleName);
 
-            bool isRemoved = (bool)VehicleLicence.Instance.RemoveVehicleLicense(SenderID, vehicleName);
+            bool isRemoved = (bool)VehicleLicence.Call("RemoveVehicleLicense", SenderID, vehicleName);
 
             SendMessage(Sender, Reciever, "sentLicense", vehicleName, string.Empty);
 
@@ -260,7 +278,7 @@ namespace Oxide.Plugins
                 return;
             }
 
-            List<string> SendersLicenses = (List<string>)VehicleLicence.Instance.GetVehicleLicenses(SenderID);
+            List<string> SendersLicenses = (List<string>)VehicleLicence.Call("GetVehicleLicenses", SenderID);
 
             var sendersVehicleNameFound = SendersLicenses.Find(value => value.ToLower() == sendersVehicleName);
 
@@ -276,7 +294,7 @@ namespace Oxide.Plugins
 
             if (!amount)
             {
-                List<string> playerLicensesReciever = (List<string>)VehicleLicence.Instance.GetVehicleLicenses(RecieverID);
+                List<string> playerLicensesReciever = (List<string>)VehicleLicence.Call("GetVehicleLicenses", RecieverID);
 
                 var recieversVehicleNameFound = playerLicensesReciever.Find(value => value.ToLower() == recieversVehicleName);
 
@@ -378,22 +396,22 @@ namespace Oxide.Plugins
             var sellAmountSR = currentRequest.sellAmountSR;
             var sellAmountEco = currentRequest.sellAmountEco;
 
-            BaseVehicle vehicleSender = (BaseVehicle)VehicleLicence.Instance.GetLicensedVehicle(playerSender.userID.Get(), vehicleNameSender);
+            BaseVehicle vehicleSender = (BaseVehicle)VehicleLicence.Call("GetLicensedVehicle", playerSender.userID.Get(), vehicleNameSender);
 
-            var isRemovedSender = (bool)VehicleLicence.Instance.RemoveVehicleLicense(playerSender.userID.Get(), vehicleNameSender);
+            var isRemovedSender = (bool)VehicleLicence.Call("RemoveVehicleLicense", playerSender.userID.Get(), vehicleNameSender);
 
             BaseVehicle vehicleReciever = vehicleSender;
 
             if (sellAmountSR == 0 && sellAmountEco == 0)
             {
-                var isAddedSender = (bool)VehicleLicence.Instance.AddVehicleLicense(playerSender.userID.Get(), vehicleNameReciever);
+                var isAddedSender = (bool)VehicleLicence.Call("AddVehicleLicense", playerSender.userID.Get(), vehicleNameReciever);
 
-                vehicleReciever = (BaseVehicle)VehicleLicence.Instance.GetLicensedVehicle(playerReciever.userID.Get(), vehicleNameReciever);
+                vehicleReciever = (BaseVehicle)VehicleLicence.Call("GetLicensedVehicle", playerReciever.userID.Get(), vehicleNameReciever);
 
-                var isRemovedReciever = (bool)VehicleLicence.Instance.RemoveVehicleLicense(playerReciever.userID.Get(), vehicleNameReciever);
+                var isRemovedReciever = (bool)VehicleLicence.Call("RemoveVehicleLicense", playerReciever.userID.Get(), vehicleNameReciever);
             }
 
-            var isAddedReciever = (bool)VehicleLicence.Instance.AddVehicleLicense(playerReciever.userID.Get(), vehicleNameSender);
+            var isAddedReciever = (bool)VehicleLicence.Call("AddVehicleLicense", playerReciever.userID.Get(), vehicleNameSender);
 
             if (config.settings.vKillTrade)
             {
@@ -615,11 +633,11 @@ namespace Oxide.Plugins
                 return;
             }
 
-            string prefix = usePrefix ? $"{vlChatSettings.prefix} " : string.Empty;
+            string prefix = usePrefix ? $"{VLChat.prefix} " : string.Empty;
 
             message = prefix + string.Format(message, iPlayer?.Name, iPlayer2?.Name, vehicleName1, vehicleName2);
 
-            Player.Message(player, message, vlChatSettings.steamIDIcon);
+            Player.Message(player, message, VLChat.steamIDIcon);
         }
         #endregion
 
@@ -858,10 +876,19 @@ namespace Oxide.Plugins
         public List<TradeRequestSettings> tradeRequests;
     }
 
-    public class VLChatSettings
+    public class SnaplatacksVLSettings
     {
-        public ulong steamIDIcon = VehicleLicence.Instance.configData.chat.steamIDIcon != 0 ? VehicleLicence.Instance.configData.chat.steamIDIcon : 0;
-        public string prefix = VehicleLicence.Instance.configData.chat.prefix != string.Empty ? VehicleLicence.Instance.configData.chat.prefix : string.Empty;
+        public VLChatSettings settings = new VLChatSettings();
+    }
+
+    public class VLChatSettings
+    {   
+        public string spawnCmd { get; set; }
+        public string recallCmd { get; set; }
+        public string killCmd { get; set; }
+
+        public string prefix { get; set; } = string.Empty;
+        public ulong steamIDIcon { get; set; } = 0;
     }
     #endregion
 }
