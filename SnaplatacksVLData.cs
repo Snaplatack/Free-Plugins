@@ -20,11 +20,11 @@ namespace Oxide.Plugins
     class SnaplatacksVLData : RustPlugin
     {
         [PluginReference]
-        private readonly Plugin VehicleLicenceUI, /*VehicleLicenceAddons,*/ VehicleLicenceTransmitter, VehicleSpawnerUI;
+        private readonly Plugin VehicleLicenceUI, VehicleLicenceAddons, VehicleLicenceTransmitter, VehicleSpawnerUI;
 
         public SnaplatacksVLData Instance;
         private Timer shutdownTimer;
-        private const string cmd = "snapvldata";
+        private const string command = "snapvldata";
         private const string perm = "snaplatacksvldata.use";
         private const string errorMsg = "SYNTAX ERROR\n/snapvldata <reset>\n/snapvldata <set> <vehicleName> <displayname | skin>";
 
@@ -33,7 +33,7 @@ namespace Oxide.Plugins
         {
             Instance = this;
 
-            AddCovalenceCommand(cmd, nameof(UpdateDataVariable), perm);
+            AddCovalenceCommand(command, nameof(UpdateDataVariable), perm);
 
             LoadCustomSettings();
 
@@ -239,7 +239,10 @@ namespace Oxide.Plugins
                 VLParams.IsWaterVehicle = vehicleType.Value.IsWaterVehicle;
                 VLParams.IsPurchasable = vehicleType.Value.Purchasable;
                 VLParams.IsCustomVehicle = vehicleType.Value.CustomVehicle;
-                
+
+                VLParams.Permission = vehicleType.Value.Permission;
+                VLParams.BypassCostPermission = vehicleType.Value.BypassCostPermission;
+
                 VLParams.PurchasePrices = new();
 
                 foreach (var price in vehicleType.Value.PurchasePrices)
@@ -288,9 +291,49 @@ namespace Oxide.Plugins
         private void ReloadPlugins()
         {
             if (VehicleLicenceUI) Interface.Oxide.ReloadPlugin(VehicleLicenceUI.Name);
-            //if (VehicleLicenceAddons) Interface.Oxide.ReloadPlugin(VehicleLicenceAddons.Name);
+            if (VehicleLicenceAddons) Interface.Oxide.ReloadPlugin(VehicleLicenceAddons.Name);
             if (VehicleLicenceTransmitter) Interface.Oxide.ReloadPlugin(VehicleLicenceTransmitter.Name);
             if (VehicleSpawnerUI) Interface.Oxide.ReloadPlugin(VehicleSpawnerUI.Name);
+        }
+        #endregion
+
+        #region Unload VL Commands
+        private void UnloadVLCommands()
+        {
+            Puts($"Unloading commands in {VehicleLicence.Instance.Name}!");
+            timer.Once(0.1f, () =>
+            {
+                foreach (var entry in VehicleLicence.Instance.allVehicleSettings)
+                {
+                    foreach (var command in entry.Value.Commands)
+                    {
+                        if (string.IsNullOrEmpty(command)) continue;
+
+                        if (VehicleLicence.Instance.configData.chat.useUniversalCommand)
+                        {
+                            if (config.VLSettings.unloadUniversalVLCommands) cmd.RemoveChatCommand(command, VehicleLicence.Instance);
+                        }
+
+                        if (!string.IsNullOrEmpty(VehicleLicence.Instance.configData.chat.customKillCommandPrefix))
+                        {
+                            if (config.VLSettings.unloadKillVLCommands) cmd.RemoveChatCommand(VehicleLicence.Instance.configData.chat.customKillCommandPrefix + command, VehicleLicence.Instance);
+                        }
+                    }
+                }
+                
+                if (config.VLSettings.unloadBuyVLCommands)
+                    cmd.RemoveChatCommand(VehicleLicence.Instance.configData.chat.buyCommand, VehicleLicence.Instance);
+                if (config.VLSettings.unloadSpawnVLCommands)
+                    cmd.RemoveChatCommand(VehicleLicence.Instance.configData.chat.spawnCommand, VehicleLicence.Instance);
+                if (config.VLSettings.unloadRecallVLCommands)
+                    cmd.RemoveChatCommand(VehicleLicence.Instance.configData.chat.recallCommand, VehicleLicence.Instance);
+                if (config.VLSettings.unloadKillVLCommands)
+                    cmd.RemoveChatCommand(VehicleLicence.Instance.configData.chat.killCommand, VehicleLicence.Instance);
+                if (config.VLSettings.unloadHelpVLCommands)
+                    cmd.RemoveChatCommand(VehicleLicence.Instance.configData.chat.helpCommand, VehicleLicence.Instance);
+
+                Puts($"Successfully unloaded commands in {VehicleLicence.Instance.Name}!");
+            });
         }
         #endregion
 
@@ -359,6 +402,18 @@ namespace Oxide.Plugins
         public Configuration config;
         public class Configuration
         {
+            [JsonProperty(PropertyName = "Vehicle Licence Settings")]
+            public VLSettings VLSettings = new VLSettings
+            {
+                unloadVLCommands = false,
+                unloadUniversalVLCommands = false,
+                unloadBuyVLCommands = false,
+                unloadSpawnVLCommands = false,
+                unloadRecallVLCommands = false,
+                unloadKillVLCommands = false,
+                unloadHelpVLCommands = false
+            };
+
             [JsonProperty(PropertyName = "General Settings")]
             public PluginSettings settings = new PluginSettings
             {
@@ -493,6 +548,30 @@ namespace Oxide.Plugins
 
         #endregion
 
+        public class VLSettings
+        {
+            [JsonProperty(PropertyName = "Enable Un-Registering of Vehicle Licence commands? [MUST BE ENABLED TO UN-REGISTER COMMANDS BELOW]")]
+            public bool unloadVLCommands;
+
+            [JsonProperty(PropertyName = "Un-Register Universal Vehicle Licence chat commands on plugin load?")]
+            public bool unloadUniversalVLCommands;
+
+            [JsonProperty(PropertyName = "Un-Register Buy Vehicle Licence chat commands on plugin load?")]
+            public bool unloadBuyVLCommands;
+
+            [JsonProperty(PropertyName = "Un-Register Spawn Vehicle Licence chat command on plugin load?")]
+            public bool unloadSpawnVLCommands;
+
+            [JsonProperty(PropertyName = "Un-Register Recall Vehicle Licence chat command on plugin load?")]
+            public bool unloadRecallVLCommands;
+
+            [JsonProperty(PropertyName = "Un-Register Kill Vehicle Licence chat command on plugin load?")]
+            public bool unloadKillVLCommands;
+
+            [JsonProperty(PropertyName = "Un-Register Help Vehicle Licence chat command on plugin load?")]
+            public bool unloadHelpVLCommands;
+        }
+
         public class PluginSettings
         {
             [JsonProperty(PropertyName = "Auto unload plugin after updating data?")]
@@ -554,6 +633,8 @@ namespace Oxide.Plugins
             public string PrefabName { get; set; }
             public string FuckOffFacepunch { get; set; } // Fuck Facepunch
             public ulong SkinID { get; set; }
+            public string Permission { get; set; }
+            public string BypassCostPermission { get; set; }
             public List<PriceInfo> PurchasePrices { get; set; } = new();
             public List<PriceInfo> SpawnPrices { get; set; } = new();
             public List<PriceInfo> RecallPrices { get; set; } = new();

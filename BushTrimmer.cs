@@ -6,12 +6,10 @@ using Newtonsoft.Json;
 
 namespace Oxide.Plugins
 {
-    [Info("Bush Trimmer", "Snaplatack", "1.0.0")]
-    [Description("Players can remove bushes with a command")]
-    class BushTrimmer : CovalencePlugin
+    [Info("Bush Trimmer", "Snaplatack", "1.0.1")]
+    [Description("Admins can remove bushes with a command")]
+    class BushTrimmer : RustPlugin
     {
-        private static int layers = (int)(Rust.Layers.Mask.Terrain | Rust.Layers.Mask.Bush);
-
         #region Initialize
         private void Init()
         {
@@ -24,36 +22,16 @@ namespace Oxide.Plugins
         {
             BasePlayer player = iPlayer.Object as BasePlayer;
 
-            if (!Physics.Raycast(player.eyes.HeadRay(), out RaycastHit hit, config.settings.distanceToDetect, layers))
-            {
-                return;
-            }
+            float radius;
 
-            PooledList<BushEntity> nearbyEntities = Pool.Get<PooledList<BushEntity>>();
+            if (args.Length > 0)
+                float.TryParse(args[0], out radius);
+            else
+                radius = config.settings.radiusToDetect;
 
-            Vis.Entities<BushEntity>(hit.point, config.settings.radiusToDetect, nearbyEntities, layers);
-
-            TrimEntity(iPlayer, nearbyEntities);
+            player.SendConsoleCommand($"debug.clear_bushes {radius}");
+            Player.Message(player, $"Removing bushes within {radius}m of your position...");
         }
-        #endregion
-
-        #region Methods
-        private void TrimEntity(IPlayer iPlayer, PooledList<BushEntity> nearbyEntities)
-        {
-            foreach (var bush in nearbyEntities)
-            {
-                if (bush == null || bush.IsDestroyed) continue;
-                if (!bush.ShortPrefabName.Contains("bush")) continue;
-
-                if (bush != null && config.settings.reply) iPlayer.Reply("Trimmed bush!");
-                bush.Kill();
-                break;
-            }
-
-            Pool.Free(ref nearbyEntities);
-        }
-
-
         #endregion
 
         #region Configuration
@@ -63,9 +41,7 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "General Settings")]
             public BTPluginSettings settings = new BTPluginSettings
             {
-                reply = true,
-                distanceToDetect = 5.0f,
-                radiusToDetect = 1.0f
+                radiusToDetect = 1.2f
             };
 
             [JsonProperty(PropertyName = "Permissions & Commands")]
@@ -78,7 +54,7 @@ namespace Oxide.Plugins
             public Core.VersionNumber Version = new Core.VersionNumber(0, 0, 0);
         }
 
-        protected override void LoadDefaultConfig() { config = new Configuration(); }
+        protected override void LoadDefaultConfig() => config = new Configuration();
         protected override void LoadConfig()
         {
             try
@@ -114,32 +90,24 @@ namespace Oxide.Plugins
         {
             if (config.Version >= Version) return;
 
-            if (config.Version < new VersionNumber(1, 0, 0))
+            if (config.Version < new VersionNumber(1, 0, 1))
             {
                 LoadDefaultConfig();
+                var configUpdateStr = "[CONFIG UPDATE] Updating to Version {0}";
+                PrintWarning(string.Format(configUpdateStr, Version));
+                config.Version = this.Version;
+
+                SaveConfig();
             }
-
-            var configUpdateStr = "[CONFIG UPDATE] Updating to Version {0}";
-            PrintWarning(string.Format(configUpdateStr, Version));
-            config.Version = this.Version;
-
-            SaveConfig();
         }
         #endregion
-
     }
 
     #region Definitions
     public class BTPluginSettings
     {
-        [JsonProperty(PropertyName = "Reply with a message when trimming a bush")]
-        public bool reply;
-
-        [JsonProperty(PropertyName = "Radius to detect bushes from line of sight [I recommend 1.0 to trim single bushes]")]
+        [JsonProperty(PropertyName = "Radius to detect bushes from players position [I recommend 1.2 to trim single bushes]")]
         public float radiusToDetect;
-
-        [JsonProperty(PropertyName = "Distant to detect bushes from line of sight [5.0 is default]")]
-        public float distanceToDetect;
     }
 
     public class BTPermsCommands

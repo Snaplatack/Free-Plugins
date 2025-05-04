@@ -40,13 +40,13 @@ namespace Oxide.Plugins
 
             foreach (var cmd in config.command.TransmitterCmd)
             {
-                if (string.IsNullOrEmpty(cmd)) continue;
+                if (string.IsNullOrWhiteSpace(cmd)) continue;
                 AddCovalenceCommand(cmd, nameof(GiveTransmitterCmd));
             }
 
             foreach (var cmd in config.command.AllItemsCmd)
             {
-                if (string.IsNullOrEmpty(cmd)) continue;
+                if (string.IsNullOrWhiteSpace(cmd)) continue;
                 AddCovalenceCommand(cmd, nameof(GiveAllVehicleItemsCmd));
             }
 
@@ -71,6 +71,7 @@ namespace Oxide.Plugins
                 VehicleLicenceVehicles VLParams = new();
 
                 VLParams.VLName = vehicleType.VLName;
+                VLParams.PrefabName = vehicleType.PrefabName;
                 VLParams.SkinID = vehicleType.SkinID;
                 VLParams.VLDisplayName = vehicleType.VLDisplayName;
                 VLParams.IsPurchasable = vehicleType.IsPurchasable;
@@ -101,9 +102,11 @@ namespace Oxide.Plugins
 
                 if (transmitter.skinID != config.Settings.transmitterSkinID && transmitter._name != config.Settings.transmitterName) continue;
                 if (transmitter.transform.position == new Vector3(0, 0, 0)) continue;
+                if (TransmitterTracker.Transmitters.ContainsKey(transmitter.net.ID.Value)) return;
 
                 if (transmitter is DroppedItem transmitterDropped)
                 {
+                    Puts(transmitterDropped.item.GetHeldEntity());
                     transmitterDropped.item.GetHeldEntity().gameObject.AddComponent<TransmitterTracker>();
                     continue;
                 }
@@ -122,9 +125,12 @@ namespace Oxide.Plugins
 
         private void Loaded()
         {
-            if (!VehicleLicence)
+            if (!ReferenceEquals(VehicleLicence, null)) return;
+
+            timer.Once(0.1f, () =>
+            {
                 Interface.Oxide.UnloadPlugin(Name);
-            return;
+            });
         }
 
         private void Unload()
@@ -153,10 +159,10 @@ namespace Oxide.Plugins
             
             BaseEntity transmitter = (BaseEntity)detonator;
             
-            if (TransmitterTracker.Transmitters.ContainsKey(transmitter.net.ID.Value)) return;
             if (transmitter.skinID != config.Settings.transmitterSkinID && transmitter._name != config.Settings.transmitterName) return;
             if (transmitter.transform.position == new Vector3(0, 0, 0)) return;
-            
+            if (TransmitterTracker.Transmitters.ContainsKey(transmitter.net.ID.Value)) return;
+
             if (transmitter is DroppedItem transmitterDropped)
             {
                 transmitterDropped.item.GetHeldEntity().gameObject.AddComponent<TransmitterTracker>();
@@ -543,19 +549,19 @@ namespace Oxide.Plugins
                     timeToKill = Time.time + VLT.config.Settings.amountOfTime;
                     frequency = transmitter.frequency;
 
-                    List<string> vehicleLicenses = VLT.VehicleLicence.Call<List<string>>("GetVehicleLicenses", player.userID.Get());
-
-                    if (!VLT.config.Settings.sortLicenses && VLT.VehicleLicenceUI)
-                        vehicleLicenses.OrderBy(x => x).ToList();
+                    List<string> vehicleLicenses = (List<string>)VLT.VehicleLicence?.Call("GetVehicleLicenses", player.userID.Get());
 
                     if (!VLT.permission.UserHasPermission(player.UserIDString, VLT.config.Perms.UseTransmitterPerm))
                         return;
 
-                    if (vehicleLicenses == null)
+                    if (VLT.config.Settings.sortLicenses || ReferenceEquals(VLT.VehicleLicenceUI, null))
+                        vehicleLicenses = vehicleLicenses.OrderBy(x => x).ToList();
+
+                    if (vehicleLicenses.Count == 0 && ReferenceEquals(VLT.VehicleLicenceUI, null))
                     {
                         VLT.SendMessage(player.IPlayer, "NeedVehicleToSpawn", string.Empty, false);
                         return;
-                    }
+                    }   
 
                     if (frequency <= 1) 
                     {
@@ -569,20 +575,19 @@ namespace Oxide.Plugins
 
                         for (int i = 0; i < vehicleLicenses.Count; i++)
                         {
-                            string numberColor = VLT.config.Settings.numberListColor;
-                            string vehicleColor = VLT.config.Settings.vehicleListColor;
                             string numberText = $"{i + 2}";
                             string licenseText = vehicleLicenses[i];
 
                             if (VLT.VData.Exists(x => x.VLName == licenseText))
                                 licenseText = VLT.VData.Find(x => x.VLName == licenseText).VLDisplayName;
 
-                            bool hasNumberColor = !string.IsNullOrWhiteSpace(numberColor);
-                            bool hasVehicleColor = !string.IsNullOrWhiteSpace(vehicleColor);
+                            string numberFormatted = !string.IsNullOrWhiteSpace(VLT.config.Settings.numberListColor)
+                                ? $"<color={VLT.config.Settings.numberListColor}>{numberText}</color>"
+                                : numberText;
 
-                            string numberFormatted = hasNumberColor ? $"<color={numberColor}>{numberText}</color>" : numberText;
-                            string licenseFormatted = hasVehicleColor ? $"<color={vehicleColor}>{licenseText}</color>" : licenseText;
-
+                            string licenseFormatted = !string.IsNullOrWhiteSpace(VLT.config.Settings.vehicleListColor)
+                                ? $"<color={VLT.config.Settings.vehicleListColor}>{licenseText}</color>"
+                                : licenseText;
 
                             licenses[i] = $"{numberFormatted}. {licenseFormatted}";
                         }
@@ -626,6 +631,7 @@ namespace Oxide.Plugins
                             }
                             
                             vName = VLT.ConvertVehicleName(vehicle.ShortPrefabName, false, false, true); // Trying to get PrefabName
+                            VLT.UpdateFrequency(transmitter, 0);
                             VLT.SendMessage(player.IPlayer, "UnownedVehicle", vName, true);
                         }
                         else
@@ -638,13 +644,6 @@ namespace Oxide.Plugins
                                     break;
                                 }
                             }
-
-                            if (string.IsNullOrEmpty(vName))
-                            {
-                                VLT.UpdateFrequency(transmitter, 0);
-                                return;
-                            }
-                            
 
                             vehicle = (BaseVehicle)VLT.VehicleLicence?.Call("GetLicensedVehicle", player.userID.Get(), vName);
 
@@ -659,7 +658,10 @@ namespace Oxide.Plugins
                                 VLT.VehicleLicence.Call("RecallLicensedVehicle", player, vName, VLT.VLChat.recallCmd);
                             }
                         }
+                        
                     }
+                    
+                    if (string.IsNullOrEmpty(vName)) VLT.UpdateFrequency(transmitter, 0);
                     #endregion
                 }
 
@@ -696,18 +698,6 @@ namespace Oxide.Plugins
         public Configuration config;
         public class Configuration
         {
-            [JsonProperty(PropertyName = "Vehicle Licence Settings")]
-            public VLSettings VLSettings = new VLSettings
-            {
-                unloadVLCommands = false,
-                unloadUniversalVLCommands = false,
-                unloadBuyVLCommands = false,
-                unloadSpawnVLCommands = false,
-                unloadRecallVLCommands = false,
-                unloadKillVLCommands = false,
-                unloadHelpVLCommands = false
-            };
-
             [JsonProperty(PropertyName = "General Settings")]
             public PluginSettings Settings = new PluginSettings
             {
@@ -728,8 +718,8 @@ namespace Oxide.Plugins
             [JsonProperty(PropertyName = "Commands")]
             public ServerCommands command = new ServerCommands
             {
-                TransmitterCmd = new (){"givetransmitter"},
-                AllItemsCmd = new (){"giveallvitems"}
+                TransmitterCmd = new () { "givetransmitter" },
+                AllItemsCmd = new () { "giveallvitems" }
             };
 
             [JsonProperty(PropertyName = "Permissions")]
@@ -790,8 +780,8 @@ namespace Oxide.Plugins
             if (config.Version < new VersionNumber(1, 0, 2))
             {
                 config.Settings.sortLicenses = true;
-                config.command.TransmitterCmd = new (){ "givetransmitter", "vlt" };
-                config.command.AllItemsCmd = new (){ "giveallvitems", "vgive" };
+                config.command.TransmitterCmd = new () { "givetransmitter", "vlt" };
+                config.command.AllItemsCmd = new () { "giveallvitems", "vgive" };
             }
 
             var configUpdateStr = "[CONFIG UPDATE] Updating to Version {0}";
@@ -818,30 +808,6 @@ namespace Oxide.Plugins
     }
 
     #region Classes
-    public class VLSettings
-    {
-        [JsonProperty(PropertyName = "Enable Un-Registering of Vehicle Licence commands? [MUST BE ENABLED TO UN-REGISTER COMMANDS BELOW]")]
-        public bool unloadVLCommands;
-
-        [JsonProperty(PropertyName = "Un-Register Universal Vehicle Licence chat commands on plugin load?")]
-        public bool unloadUniversalVLCommands;
-
-        [JsonProperty(PropertyName = "Un-Register Buy Vehicle Licence chat commands on plugin load?")]
-        public bool unloadBuyVLCommands;
-
-        [JsonProperty(PropertyName = "Un-Register Spawn Vehicle Licence chat command on plugin load?")]
-        public bool unloadSpawnVLCommands;
-
-        [JsonProperty(PropertyName = "Un-Register Recall Vehicle Licence chat command on plugin load?")]
-        public bool unloadRecallVLCommands;
-
-        [JsonProperty(PropertyName = "Un-Register Kill Vehicle Licence chat command on plugin load?")]
-        public bool unloadKillVLCommands;
-
-        [JsonProperty(PropertyName = "Un-Register Help Vehicle Licence chat command on plugin load?")]
-        public bool unloadHelpVLCommands;
-    }
-
     public class PluginSettings
     {
         [JsonProperty(PropertyName = "Give Vehicle Item when vehicle is stored?")]
@@ -954,6 +920,8 @@ namespace Oxide.Plugins
         public string PrefabName { get; set; }
         public string FuckOffFacepunch { get; set; } // Fuck Facepunch
         public ulong SkinID { get; set; }
+        public string Permission { get; set; }
+        public string BypassCostPermission { get; set; }
         public List<PriceInfo> PurchasePrices { get; set; } = new();
         public List<PriceInfo> SpawnPrices { get; set; } = new();
         public List<PriceInfo> RecallPrices { get; set; } = new();

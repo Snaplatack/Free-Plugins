@@ -9,7 +9,7 @@ using System.Linq;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence Addons", "Snaplatack", "1.0.31")]
+    [Info("Vehicle Licence Addons", "Snaplatack", "1.0.4")]
     [Description("Additional options for the Vehicle Licence plugin")]
     public class VehicleLicenceAddons : CovalencePlugin
     {
@@ -54,9 +54,12 @@ namespace Oxide.Plugins
 
         private void Loaded()
         {
-            if (!VehicleLicence)
+            if (!ReferenceEquals(VehicleLicence, null)) return;
+
+            timer.Once(0.1f, () =>
+            {
                 Interface.Oxide.UnloadPlugin(Name);
-            return;
+            });
         }
 
         private void Unload()
@@ -710,7 +713,7 @@ namespace Oxide.Plugins
 
         private void UpdateConfig()
         {
-            //current version = 1.0.31
+            //current version = 1.0.4
             if (config.Version >= Version) return;
             if (config.Version < new VersionNumber(1, 0, 3))
             {
