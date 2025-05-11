@@ -12,7 +12,7 @@ using System.Collections.Specialized;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence Transmitter", "Snaplatack", "1.0.2")]
+    [Info("Vehicle Licence Transmitter", "Snaplatack", "1.0.3")]
     [Description("Spawn Vehicles through Vehicle Licence with a RF Transmitter")]
     public class VehicleLicenceTransmitter : RustPlugin
     {
@@ -775,7 +775,7 @@ namespace Oxide.Plugins
 
         private void UpdateConfig()
         {
-            // Current Version = 1.0.2
+            // Current Version = 1.0.3
             if (config.Version >= Version) return;
 
             if (config.Version < new VersionNumber(1, 0, 2))
@@ -783,10 +783,11 @@ namespace Oxide.Plugins
                 config.Settings.sortLicenses = true;
                 config.command.TransmitterCmd = new () { "givetransmitter", "vlt" };
                 config.command.AllItemsCmd = new () { "giveallvitems", "vgive" };
+                
+                var configUpdateStr = "[CONFIG UPDATE] Updating to Version {0}";
+                PrintWarning(string.Format(configUpdateStr, Version));
             }
 
-            var configUpdateStr = "[CONFIG UPDATE] Updating to Version {0}";
-            PrintWarning(string.Format(configUpdateStr, Version));
             config.Version = this.Version;
 
             SaveConfig();
