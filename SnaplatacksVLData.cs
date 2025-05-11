@@ -251,6 +251,7 @@ namespace Oxide.Plugins
 
                     PriceInfo purchasePrices = new();
 
+                    purchasePrices.currency = price.Key;
                     purchasePrices.amount = price.Value.amount;
                     purchasePrices.displayName = price.Value.displayName;
 
@@ -263,6 +264,7 @@ namespace Oxide.Plugins
 
                     PriceInfo spawnPrices = new();
 
+                    spawnPrices.currency = price.Key;
                     spawnPrices.amount = price.Value.amount;
                     spawnPrices.displayName = price.Value.displayName;
 
@@ -275,6 +277,7 @@ namespace Oxide.Plugins
 
                     PriceInfo recallPrices = new();
 
+                    recallPrices.currency = price.Key;
                     recallPrices.amount = price.Value.amount;
                     recallPrices.displayName = price.Value.displayName;
 
@@ -619,6 +622,7 @@ namespace Oxide.Plugins
 
         public class PriceInfo
         {
+            public string currency;
             public int amount;
             public string displayName;
         }

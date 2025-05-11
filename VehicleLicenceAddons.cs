@@ -2,6 +2,7 @@
 using Oxide.Core;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Core.Plugins;
+using UnityEngine;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -9,21 +10,24 @@ using System.Linq;
 
 namespace Oxide.Plugins
 {
-    [Info("Vehicle Licence Addons", "Snaplatack", "1.0.4")]
+    [Info("Vehicle Licence Addons", "Snaplatack", "1.0.5")]
     [Description("Additional options for the Vehicle Licence plugin")]
-    public class VehicleLicenceAddons : CovalencePlugin
+    public class VehicleLicenceAddons : RustPlugin
     {
         #region Global Vars
         [PluginReference]
         private readonly Plugin VehicleLicence, ServerRewards, Economics;
         public static VehicleLicenceAddons Instance;
+        private Dictionary<string, VehicleLicenceVehicles> VData = new();
         private VLChatSettings VLChat = new();
         #endregion
 
         #region Init
-        private void Init()
+        private void OnServerInitialized()
         {
             Instance = this;
+
+            if (config.settings.autoClaimVehicle) Subscribe(nameof(CanBuild));
 
             AddCovalenceCommand(config.cmdPerms.vOwnedCmd, nameof(CurrentOwnedLicensesCmd));
             AddCovalenceCommand(config.cmdPerms.vSpawnedCmd, nameof(CurrentlySpawnedVehiclesCmd));
@@ -32,13 +36,30 @@ namespace Oxide.Plugins
             AddCovalenceCommand(config.cmdPerms.vAcceptTradeCmd, nameof(AcceptTradeCmd));
             AddCovalenceCommand(config.cmdPerms.vDenyTradeCmd, nameof(DenyTradeCmd));
             AddCovalenceCommand(config.cmdPerms.vCancelTradeCmd, nameof(CancelTradeCmd));
+            AddCovalenceCommand(config.cmdPerms.vRefundCmd, nameof(RefundCmd));
             AddCovalenceCommand("vhelp", nameof(VehicleAddonHelp));
 
             permission.RegisterPermission(config.cmdPerms.vTransferPerm, this);
             permission.RegisterPermission(config.cmdPerms.vTradePerm, this);
             permission.RegisterPermission(config.cmdPerms.vAdminPerm, this);
+            permission.RegisterPermission(config.cmdPerms.vRefundPerm, this);
 
             LoadData();
+
+            var snapsVehicles = Config.ReadObject<SnaplatacksVLConfiguration>($"{Interface.Oxide.DataDirectory}/SnaplatacksVLData/VehicleLicenceNames.json");
+            var snapsVehicleData = snapsVehicles.vehicles.Count != 0 ? snapsVehicles.vehicles : new();
+
+            foreach (var vehicleType in snapsVehicleData)
+            {
+                VehicleLicenceVehicles VLParams = new();
+
+                VLParams.VLName = vehicleType.VLName;
+                VLParams.SkinID = vehicleType.SkinID;
+                VLParams.PrefabName = vehicleType.PrefabName;
+                VLParams.PurchasePrices = vehicleType.PurchasePrices;
+
+                VData[vehicleType.VLName] = VLParams;
+            }
 
             var snapsSettings = Config.ReadObject<SnaplatacksVLSettings>($"{Interface.Oxide.DataDirectory}/SnaplatacksVLData/VehicleLicenceChatSettings.json");
             var snapsChatSettings = snapsSettings.settings;
@@ -50,6 +71,11 @@ namespace Oxide.Plugins
             chatSettings.killCmd = snapsChatSettings.killCmd;
 
             VLChat = chatSettings;
+        }
+
+        private void Init()
+        {
+            Unsubscribe(nameof(CanBuild));
         }
 
         private void Loaded()
@@ -330,7 +356,7 @@ namespace Oxide.Plugins
             }
 
             Data.trades.tradeRequests.Add(tradeRequest);
-            SaveData(); //Used to Debug
+            //SaveData(); //Used to Debug
 
             if (amountFound != 0)
             {
@@ -439,7 +465,7 @@ namespace Oxide.Plugins
                 Data.trades.tradeRequests.Remove(currentRequest);
             }
 
-            SaveData(); //Used to Debug
+            //SaveData(); //Used to Debug
 
             if (sellAmountSR != 0)
             {
@@ -512,7 +538,7 @@ namespace Oxide.Plugins
                 Data.trades.tradeRequests.Remove(currentRequest);
             }
 
-            SaveData(); //Used to Debug
+            //SaveData(); //Used to Debug
 
             if (sellAmountSR != 0)
             {
@@ -586,7 +612,7 @@ namespace Oxide.Plugins
                 Data.trades.tradeRequests.Remove(currentRequest);
             }
 
-            SaveData(); //Used to Debug
+            //SaveData(); //Used to Debug
 
             if (sellAmountSR != 0)
             {
@@ -606,6 +632,81 @@ namespace Oxide.Plugins
         }
         #endregion
 
+        #region Refunding
+        private void RefundCmd(IPlayer player, string command, string[] args)
+        {
+            if (player.IsServer || player == null) return;
+            if (!permission.UserHasPermission(player.Id, config.cmdPerms.vRefundPerm)) return;
+
+            ulong playerID = ulong.Parse(player.Id);
+            
+            if (args.Length <= 0)
+            {
+                SendMessage(player, null, "incorrectCmdFormat", "/" + config.cmdPerms.vRefundCmd + " <vehicleName>", string.Empty);
+                return;
+            }
+
+            string arg = args[0];
+
+            VehicleLicenceVehicles vData = VData.Values.ToList().Find(x => x.PrefabName == arg.ToLower() || x.VLName == arg);
+
+            if (vData == null)
+            {
+                SendMessage(player, player, "noVehiclesFound", string.Empty, string.Empty);
+                return;
+            }
+
+            string vName = vData.VLName;
+
+            if(!(bool)VehicleLicence?.Call("HasVehicleLicense", playerID, vName))
+            {
+                SendMessage(player, player, "dontOwnVehicle", vName, string.Empty);
+                return;
+            }
+
+            if (!(bool)VehicleLicence?.Call("RemoveVehicleLicense", playerID, vName)) return;
+
+            RefundPurchase(player.Object as BasePlayer, vName, true);
+        }
+        #endregion
+
+        #endregion
+
+        #region API
+        [HookMethod(nameof(RefundAfterRemove))]
+        private bool RefundAfterRemove(BasePlayer player, string vName, bool response = true)
+        {
+            if (player == null) return false;
+
+            return RefundPurchase(player, vName, response);
+        }
+        #endregion
+
+        #region Hooks
+        private object CanBuild(Planner planner, Construction prefab, Construction.Target target)
+        {
+            var item = planner.GetItem();
+
+            if (item.skin <= 0 && item.name == null) return null;
+
+            VehicleLicenceVehicles vData = VData.Values.ToList().Find(x => x.PrefabName == item.name || x.VLName == item.name || x.SkinID == item.skin);
+
+            if (vData == null) return null;
+
+            string vName = vData.VLName;
+
+            var player = item.GetOwnerPlayer();
+
+            if (player == null) return null;
+
+            if (!(bool)VehicleLicence?.Call("AddVehicleLicense", player.userID.Get(), vName)) return false;
+
+            if (!(bool)VehicleLicence?.Call("SpawnLicensedVehicle", player, vName, VLChat.spawnCmd)) return false;
+
+            item.Remove();
+
+            return null;
+        }
         #endregion
 
         #region Method Helpers
@@ -642,6 +743,51 @@ namespace Oxide.Plugins
 
             Player.Message(player, message, VLChat.steamIDIcon);
         }
+
+        private bool RefundPurchase(BasePlayer player, string vName, bool response)
+        {
+            var vPrices = VData[vName].PurchasePrices;
+            string currency;
+            double amount = 0;
+            int result = 0;
+            double percent = config.settings.percentageToRefund;
+            string[] textArray = new string[vPrices.Count];
+
+            int i = 0;
+            foreach (var price in vPrices)
+            {
+                currency = price.currency;
+
+                amount = price.amount;
+
+                if (percent < 100)
+                {
+                    amount = result = (int)((amount / 100) * percent);
+                }
+
+                switch (currency.ToLower())
+                {
+                    case ("serverrewards"):
+                        ServerRewards?.Call("AddPoints", player.userID.Get(), result);
+                        textArray[i] = $"{result} {price.displayName}";
+                        break;
+                    case ("economics"):
+                        Economics?.Call("Deposit", player.UserIDString, amount);
+                        textArray[i] = $"{result} {price.displayName}";
+                        break;
+                    default:
+                        rust.RunServerCommand($"inventory.giveto {player.UserIDString} {currency} {result}");
+                        textArray[i] = $"{result} {price.displayName}";
+                        break;
+                }
+                i++;
+            }
+
+            string formattedText = string.Join(" <color=white>&</color> ", textArray);
+
+            if (response) SendMessage(player.IPlayer, null, "refundSuccess", vName, formattedText);
+            return amount != 0;
+        }
         #endregion
 
         #region Configuration
@@ -654,10 +800,12 @@ namespace Oxide.Plugins
                 clearDataOnWipe = false,
                 othersViewAllLicenses = false,
                 othersViewAllVehicles = false,
+                autoClaimVehicle = false,
                 vKillGive = false,
                 vKillTrade = false,
                 useServerRewards = false,
                 useEconomics = false,
+                percentageToRefund = 100,
                 currencySymbol = "$"
             };
 
@@ -671,9 +819,11 @@ namespace Oxide.Plugins
                 vCancelTradeCmd = "cancellicense",
                 vOwnedCmd = "mylicenses",
                 vSpawnedCmd = "myvehicles",
+                vRefundCmd = "refundvehicle",
                 vAdminPerm = "vehiclelicenceaddons.admin",
                 vTransferPerm = "vehiclelicenceaddons.allowgivelicense",
-                vTradePerm = "vehiclelicenceaddons.allowtradelicense"
+                vTradePerm = "vehiclelicenceaddons.allowtradelicense",
+                vRefundPerm = "vehiclelicenceaddons.allowrefund"
             };
 
             public Core.VersionNumber Version = new Core.VersionNumber(0, 0, 0);
@@ -713,9 +863,9 @@ namespace Oxide.Plugins
 
         private void UpdateConfig()
         {
-            //current version = 1.0.4
+            //current version = 1.0.5
             if (config.Version >= Version) return;
-            if (config.Version < new VersionNumber(1, 0, 3))
+            if (config.Version < new VersionNumber(1, 0, 5))
             {
                 LoadDefaultConfig();
 
@@ -797,7 +947,11 @@ namespace Oxide.Plugins
 
                 ["playerAlreadyOwns"] = "<color=orange>{1}</color> already owns a <color=#009eff>{2}</color>!",
                 ["couldntFindPlayer"] = "Error finding that player! Please put their whole name if possible!",
-                ["incorrectCmdFormat"] = "Wrong format! <color=orange>{2}</color>"
+                ["incorrectCmdFormat"] = "Wrong format! <color=orange>{2}</color>",
+
+                ["dontOwnVehicle"] = "You dont own a <color=#009eff>{2}</color>!",
+                ["refundSuccess"] = "Successfully refunded your <color=#009eff>{2}</color> for <color=orange>{3}</color>!"
+
             }, this);
         }
         #endregion
@@ -837,6 +991,9 @@ namespace Oxide.Plugins
         [JsonProperty(PropertyName = "Check Spawned Licensed Vehicles Command")]
         public string vSpawnedCmd;
 
+        [JsonProperty(PropertyName = "Refund Licensed Vehicle Command")]
+        public string vRefundCmd;
+
         [JsonProperty(PropertyName = "Admin Perm")]
         public string vAdminPerm;
 
@@ -845,6 +1002,9 @@ namespace Oxide.Plugins
 
         [JsonProperty(PropertyName = "License Trading Perm")]
         public string vTradePerm;
+
+        [JsonProperty(PropertyName = "Refund Perm")]
+        public string vRefundPerm;
     }
 
     public class VLAPluginSettings
@@ -858,25 +1018,36 @@ namespace Oxide.Plugins
         [JsonProperty(PropertyName = "Clear Pending Trades On New Wipe")]
         public bool clearDataOnWipe;
 
+        [JsonProperty(PropertyName = "Globally Auto Claim Vehicle When Placing a Box With a Vehicle Skin")]
+        public bool autoClaimVehicle;
+
         [JsonProperty(PropertyName = "Kill Original Vehicle When Given")]
         public bool vKillGive;
 
         [JsonProperty(PropertyName = "Kill Both Vehicles When Traded")]
         public bool vKillTrade;
 
-        [JsonProperty(PropertyName = "Use Server Rewards When Trading")]
+        [JsonProperty(PropertyName = "Use Server Rewards When Trading and Refunding")]
         public bool useServerRewards;
 
-        [JsonProperty(PropertyName = "Use Economics When Trading")]
+        [JsonProperty(PropertyName = "Use Economics When Trading and Refunding")]
         public bool useEconomics;
 
         [JsonProperty(PropertyName = "Currency Symbol [Gets added before the number]")]
         public string currencySymbol;
+
+        [JsonProperty(PropertyName = "Percent to refund? [0 - 100]")]
+        public double percentageToRefund;
     }
 
     public class Trading
     {
         public List<TradeRequestSettings> tradeRequests;
+    }
+
+    public class SnaplatacksVLConfiguration
+    {
+        public List<VehicleLicenceVehicles> vehicles = new List<VehicleLicenceVehicles>();
     }
 
     public class SnaplatacksVLSettings
@@ -892,6 +1063,30 @@ namespace Oxide.Plugins
 
         public string prefix { get; set; } = string.Empty;
         public ulong steamIDIcon { get; set; } = 0;
+    }
+
+    public class VehicleLicenceVehicles
+    {
+        public string VLName { get; set; }
+        public string VLDisplayName { get; set; }
+        public bool IsWaterVehicle { get; set; }
+        public bool IsCustomVehicle { get; set; }
+        public bool IsPurchasable { get; set; }
+        public string PrefabName { get; set; }
+        public string FuckOffFacepunch { get; set; } // Fuck Facepunch
+        public ulong SkinID { get; set; }
+        public string Permission { get; set; }
+        public string BypassCostPermission { get; set; }
+        public List<PriceInfo> PurchasePrices { get; set; } = new();
+        public List<PriceInfo> SpawnPrices { get; set; } = new();
+        public List<PriceInfo> RecallPrices { get; set; } = new();
+    }
+
+    public class PriceInfo
+    {
+        public string currency;
+        public int amount;
+        public string displayName;
     }
     #endregion
 }

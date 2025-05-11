@@ -90,6 +90,9 @@ namespace Oxide.Plugins
             chatSettings.recallCmd = snapsChatSettings.recallCmd;
             chatSettings.killCmd = snapsChatSettings.killCmd;
 
+            chatSettings.prefix = snapsChatSettings.prefix;
+            chatSettings.steamIDIcon = snapsChatSettings.steamIDIcon;
+
             VLChat = chatSettings;
 
             foreach (var detonator in BaseNetworkable.serverEntities.OfType<Detonator>())
@@ -102,11 +105,10 @@ namespace Oxide.Plugins
 
                 if (transmitter.skinID != config.Settings.transmitterSkinID && transmitter._name != config.Settings.transmitterName) continue;
                 if (transmitter.transform.position == new Vector3(0, 0, 0)) continue;
-                if (TransmitterTracker.Transmitters.ContainsKey(transmitter.net.ID.Value)) return;
+                if (TransmitterTracker.Transmitters.ContainsKey(transmitter.net.ID.Value)) continue;
 
                 if (transmitter is DroppedItem transmitterDropped)
                 {
-                    Puts(transmitterDropped.item.GetHeldEntity());
                     transmitterDropped.item.GetHeldEntity().gameObject.AddComponent<TransmitterTracker>();
                     continue;
                 }
@@ -230,10 +232,6 @@ namespace Oxide.Plugins
             if (ConvertVehicleName(item.name) != item.name) vName = ConvertVehicleName(item.name); // converting from lowered VLName name to VLName UpperCased
 
             if (!VData.Exists(x => x.VLName.ToLower() == item.name)) return;
-
-            var player = plan.GetOwnerPlayer();
-
-            if (object.ReferenceEquals(player, null)) return;
 
             go.ToBaseEntity().Kill();
         }
@@ -556,6 +554,9 @@ namespace Oxide.Plugins
 
                     if (VLT.config.Settings.sortLicenses || ReferenceEquals(VLT.VehicleLicenceUI, null))
                         vehicleLicenses = vehicleLicenses.OrderBy(x => x).ToList();
+
+                    if (!ReferenceEquals(VLT.VehicleLicenceUI, null))
+                        vehicleLicenses = (List<string>)VLT.VehicleLicenceUI.Call("UpdateVehicleFilter", player, vehicleLicenses);
 
                     if (vehicleLicenses.Count == 0 && ReferenceEquals(VLT.VehicleLicenceUI, null))
                     {
@@ -906,6 +907,7 @@ namespace Oxide.Plugins
 
     public class PriceInfo
     {
+        public string currency;
         public int amount;
         public string displayName;
     }
