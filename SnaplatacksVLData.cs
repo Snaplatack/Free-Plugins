@@ -15,7 +15,7 @@ using System.Collections.Specialized;
 
 namespace Oxide.Plugins
 {
-    [Info("Snaplatack's Vehicle Licence Data", "Snaplatack", "1.0.0")]
+    [Info("Snaplatack's Vehicle Licence Data", "Snaplatack", "1.0.1")]
     [Description("Data to support all my Vehicle Licence plugins")]
     class SnaplatacksVLData : RustPlugin
     {
@@ -463,7 +463,7 @@ namespace Oxide.Plugins
         {
             if (config.Version >= Version) return;
 
-            if (config.Version < new VersionNumber(1, 0, 0))
+            if (config.Version < new VersionNumber(1, 0, 1))
             {
                 LoadDefaultConfig();
 
